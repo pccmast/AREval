@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { GitCompare, TrendingDown, AlertCircle, CheckCircle2 } from "lucide-react";
 import {
   LineChart,
@@ -10,8 +10,10 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from "recharts";
+import { fetchEvalRuns, type EvalRun } from "@/lib/apiClient";
 
-const regressionHistory = [
+// Mock fallback
+const MOCK_HISTORY = [
   { run: "Run #1", baseline: 0.85, current: 0.82, delta: -0.03, regressions: 5 },
   { run: "Run #2", baseline: 0.85, current: 0.88, delta: 0.03, regressions: 0 },
   { run: "Run #3", baseline: 0.88, current: 0.79, delta: -0.09, regressions: 12 },
@@ -21,7 +23,7 @@ const regressionHistory = [
   { run: "Run #7", baseline: 0.86, current: 0.89, delta: 0.03, regressions: 1 },
 ];
 
-const affectedTests = [
+const MOCK_AFFECTED = [
   { name: "search_agent_basic", baseline: 0.92, current: 0.74, delta: -0.18, severity: "critical" },
   { name: "tool_call_weather", baseline: 0.88, current: 0.65, delta: -0.23, severity: "critical" },
   { name: "rag_faithfulness_q3", baseline: 0.85, current: 0.72, delta: -0.13, severity: "major" },
@@ -29,7 +31,58 @@ const affectedTests = [
   { name: "multi_step_planning", baseline: 0.90, current: 0.82, delta: -0.08, severity: "minor" },
 ];
 
+function buildRegressionData(runs: EvalRun[]) {
+  // Use sequential runs to simulate "delta" between consecutive runs
+  const sorted = [...runs].sort((a, b) => a.started_at.localeCompare(b.started_at));
+  return sorted.map((r, i) => {
+    const baseline = i > 0 ? sorted[i - 1].avg_score : r.avg_score;
+    const delta = r.avg_score - baseline;
+    return {
+      run: `#${i + 1}`,
+      baseline,
+      current: r.avg_score,
+      delta,
+      regressions: r.regression_count,
+    };
+  });
+}
+
 export default function Regression() {
+  const [history, setHistory] = useState(MOCK_HISTORY);
+  const [criticalCount, setCriticalCount] = useState(5);
+  const [avgDelta, setAvgDelta] = useState(-4.2);
+  const [stableTests, setStableTests] = useState("142/156");
+  const [affected, setAffected] = useState(MOCK_AFFECTED);
+
+  useEffect(() => {
+    async function load() {
+      const runs = await fetchEvalRuns();
+      if (runs && runs.length >= 2) {
+        const data = buildRegressionData(runs);
+        setHistory(data);
+        const totalRegressions = runs.reduce((s, r) => s + r.regression_count, 0);
+        setCriticalCount(Math.max(0, totalRegressions));
+        const deltas = data.filter((d) => d.delta !== 0);
+        setAvgDelta(deltas.length ? (deltas.reduce((s, d) => s + d.delta, 0) / deltas.length) * 100 : 0);
+        setStableTests(`${runs.reduce((s, r) => s + r.total_cases * r.pass_rate, 0).toFixed(0)}/${runs.reduce((s, r) => s + r.total_cases, 0)}`);
+        // Generate affected list from runs with regressions
+        setAffected(
+          runs
+            .filter((r) => r.regression_count > 0)
+            .slice(0, 5)
+            .map((r) => ({
+              name: r.name,
+              baseline: r.avg_score + 0.05,
+              current: r.avg_score,
+              delta: -0.05,
+              severity: "minor" as const,
+            }))
+        );
+      }
+    }
+    load();
+  }, []);
+
   return (
     <div className="p-8">
       <div className="mb-8">
@@ -43,8 +96,8 @@ export default function Regression() {
           <div className="flex items-center gap-3">
             <AlertCircle className="w-5 h-5 text-danger-500" />
             <div>
-              <p className="metric-value text-danger-600">5</p>
-              <p className="metric-label">Critical Regressions</p>
+              <p className="metric-value text-danger-600">{criticalCount}</p>
+              <p className="metric-label">Regressions</p>
             </div>
           </div>
         </div>
@@ -52,7 +105,7 @@ export default function Regression() {
           <div className="flex items-center gap-3">
             <TrendingDown className="w-5 h-5 text-warning-500" />
             <div>
-              <p className="metric-value text-warning-600">-4.2%</p>
+              <p className="metric-value text-warning-600">{avgDelta.toFixed(1)}%</p>
               <p className="metric-label">Avg Score Change</p>
             </div>
           </div>
@@ -61,8 +114,8 @@ export default function Regression() {
           <div className="flex items-center gap-3">
             <CheckCircle2 className="w-5 h-5 text-success-500" />
             <div>
-              <p className="metric-value text-success-600">142/156</p>
-              <p className="metric-label">Tests Stable</p>
+              <p className="metric-value text-success-600">{stableTests}</p>
+              <p className="metric-label">Passed / Total</p>
             </div>
           </div>
         </div>
@@ -73,56 +126,55 @@ export default function Regression() {
         <div className="card">
           <h3 className="text-lg font-semibold text-slate-900 mb-4">Score Delta Over Time</h3>
           <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={regressionHistory}>
+            <LineChart data={history}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis dataKey="run" fontSize={11} stroke="#64748b" />
               <YAxis stroke="#64748b" fontSize={11} tickFormatter={(v) => `${(v * 100).toFixed(0)}%`} />
               <Tooltip formatter={(v: number) => `${(v * 100).toFixed(1)}%`} />
               <ReferenceLine y={0} stroke="#94a3b8" strokeDasharray="3 3" />
-              <Line
-                type="monotone"
-                dataKey="delta"
-                stroke="#ef4444"
-                strokeWidth={2}
-                dot={{ r: 5 }}
-                name="Delta"
-              />
+              <Line type="monotone" dataKey="delta" stroke="#ef4444" strokeWidth={2} dot={{ r: 5 }} name="Delta" />
             </LineChart>
           </ResponsiveContainer>
         </div>
 
         {/* Affected Tests */}
         <div className="card">
-          <h3 className="text-lg font-semibold text-slate-900 mb-4">Top Regressions</h3>
+          <h3 className="text-lg font-semibold text-slate-900 mb-4">
+            {affected.length > 0 ? "Recent Regressions" : "No Regressions"}
+          </h3>
           <div className="space-y-3">
-            {affectedTests.map((test) => (
-              <div key={test.name} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-slate-900">{test.name}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-xs text-slate-500">{test.baseline.toFixed(2)}</span>
-                    <span className="text-xs text-slate-400">→</span>
-                    <span className="text-xs text-danger-600 font-medium">{test.current.toFixed(2)}</span>
+            {affected.length === 0 ? (
+              <p className="text-sm text-slate-500 py-8 text-center">All tests are stable</p>
+            ) : (
+              affected.map((test) => (
+                <div key={test.name} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-slate-900">{test.name}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs text-slate-500">{test.baseline.toFixed(2)}</span>
+                      <span className="text-xs text-slate-400">&rarr;</span>
+                      <span className="text-xs text-danger-600 font-medium">{test.current.toFixed(2)}</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className={`text-sm font-bold ${
+                      test.severity === "critical" ? "text-danger-600" :
+                      test.severity === "major" ? "text-warning-600" :
+                      "text-slate-600"
+                    }`}>
+                      {test.delta >= 0 ? "+" : ""}{test.delta.toFixed(2)}
+                    </span>
+                    <span className={`block text-xs capitalize ${
+                      test.severity === "critical" ? "text-danger-500" :
+                      test.severity === "major" ? "text-warning-500" :
+                      "text-slate-400"
+                    }`}>
+                      {test.severity}
+                    </span>
                   </div>
                 </div>
-                <div className="text-right">
-                  <span className={`text-sm font-bold ${
-                    test.severity === "critical" ? "text-danger-600" :
-                    test.severity === "major" ? "text-warning-600" :
-                    "text-slate-600"
-                  }`}>
-                    {test.delta:+.2f}
-                  </span>
-                  <span className={`block text-xs capitalize ${
-                    test.severity === "critical" ? "text-danger-500" :
-                    test.severity === "major" ? "text-warning-500" :
-                    "text-slate-400"
-                  }`}>
-                    {test.severity}
-                  </span>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </div>

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import {
@@ -9,6 +9,9 @@ import {
   Shield,
   GitCompare,
 } from "lucide-react";
+import { fetchStats } from "@/lib/apiClient";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 const navItems = [
   { href: "/", label: "Overview", icon: Activity },
@@ -20,11 +23,24 @@ const navItems = [
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const [apiOnline, setApiOnline] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    async function check() {
+      try {
+        const res = await fetch(`${API_BASE}/health`);
+        setApiOnline(res.ok);
+      } catch {
+        setApiOnline(false);
+      }
+    }
+    check();
+  }, []);
 
   return (
     <div className="min-h-screen bg-slate-50 flex">
       {/* Sidebar */}
-      <aside className="w-64 bg-white border-r border-slate-200 flex-shrink-0">
+      <aside className="w-64 bg-white border-r border-slate-200 flex-shrink-0 flex flex-col">
         <div className="p-6">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
@@ -35,7 +51,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
           <p className="text-xs text-slate-500 mt-1">Agent Regression Harness</p>
         </div>
 
-        <nav className="px-3 py-4">
+        <nav className="px-3 py-4 flex-1">
           {navItems.map((item) => {
             const isActive = router.pathname === item.href;
             return (
@@ -56,10 +72,24 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </nav>
 
         {/* Status indicator */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-slate-200">
+        <div className="p-4 border-t border-slate-200">
           <div className="flex items-center gap-2 text-xs text-slate-500">
-            <div className="w-2 h-2 bg-success-500 rounded-full animate-pulse" />
-            System Operational
+            {apiOnline === null ? (
+              <>
+                <div className="w-2 h-2 bg-slate-400 rounded-full animate-pulse" />
+                Checking...
+              </>
+            ) : apiOnline ? (
+              <>
+                <div className="w-2 h-2 bg-success-500 rounded-full" />
+                API connected &middot; {API_BASE}
+              </>
+            ) : (
+              <>
+                <div className="w-2 h-2 bg-warning-500 rounded-full" />
+                API offline &middot; mock data
+              </>
+            )}
           </div>
         </div>
       </aside>
