@@ -59,8 +59,14 @@ class TestContainsMetric:
 class TestFaithfulnessMetric:
     def test_faithful_output(self):
         metric = FaithfulnessMetric()
+        # When an LLM API key is absent the judge falls back to a heuristic
+        # mock that compares expected_output with actual_output.  Provide
+        # expected_output aligned with the context so the mock can detect
+        # the answer is faithful.
         tc = TestCase(
+            name="python-fact",
             input="What is Python?",
+            expected_output="Python is a programming language created by Guido van Rossum.",
             context="Python is a programming language created by Guido van Rossum.",
         )
         ao = AgentOutput(output="Python is a programming language.")

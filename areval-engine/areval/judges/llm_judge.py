@@ -229,14 +229,32 @@ REASONING: Heuristic evaluation — token overlap={overlap:.2f}, length_ratio={l
 
         return result
 
-    def evaluate(self, test_case: TestCase, agent_output: AgentOutput) -> JudgeResult:
+    def evaluate(
+        self,
+        test_case: TestCase,
+        agent_output: AgentOutput,
+        **extra_format_kwargs: Any,
+    ) -> JudgeResult:
+        """Run LLM evaluation.
+
+        Parameters
+        ----------
+        test_case : TestCase
+        agent_output : AgentOutput
+        extra_format_kwargs :
+            Additional keyword arguments passed to :meth:`str.format` on the
+            rubric template.  Useful for rubrics that require extra fields
+            such as ``{context}``.
+        """
         expected = test_case.expected_output or ""
         actual = agent_output.output
-        prompt = self.rubric.format(
-            input=test_case.input,
-            expected_output=expected,
-            actual_output=actual,
-        )
+        format_kwargs: Dict[str, Any] = {
+            "input": test_case.input,
+            "expected_output": expected,
+            "actual_output": actual,
+        }
+        format_kwargs.update(extra_format_kwargs)
+        prompt = self.rubric.format(**format_kwargs)
 
         response = self._call_llm(prompt, expected, actual)
         parsed = self._parse_response(response)
