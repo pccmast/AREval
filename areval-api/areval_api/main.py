@@ -27,6 +27,10 @@ from areval.metrics import (
     FaithfulnessMetric,
 )
 from areval.judges import LLMJudge
+from areval.online.evaluator import OnlineEvaluator
+from areval.online.storage import TimeSeriesStorage
+from areval.online.monitors import QualityMonitor, AlertConfig
+from areval.test_case import TestCase as TCase, AgentOutput as AOutput
 
 app = FastAPI(
     title="AREval API",
@@ -49,6 +53,19 @@ baseline_manager = BaselineManager()
 
 # In-memory storage for demo (use DB in production)
 _eval_runs: Dict[str, EvaluationRun] = {}
+
+# Online evaluation instance (singleton for the API process)
+_online_storage = TimeSeriesStorage()
+_online_evaluator = OnlineEvaluator(
+    metrics=[ExactMatchMetric(), SemanticSimilarityMetric()],
+    threshold=0.7,
+    storage=_online_storage,
+    monitor=QualityMonitor(
+        storage=_online_storage,
+        config=AlertConfig(window_minutes=30, min_samples=3),
+    ),
+    async_mode=False,  # sync for API demo
+)
 
 
 # ---------------------------------------------------------------------------
@@ -318,6 +335,60 @@ async def get_stats() -> Dict[str, Any]:
         "datasets": len(dataset_manager.list_datasets()),
         "baselines": len(baseline_manager.list_baselines()),
     }
+
+
+# ---------------------------------------------------------------------------
+# Online evaluation endpoints
+# ---------------------------------------------------------------------------
+
+
+class OnlineEvalRequest(BaseModel):
+    input: str
+    output: str = ""
+    tool_calls: List[Dict[str, Any]] = Field(default_factory=list)
+    trace_id: Optional[str] = None
+    latency_ms: float = 0.0
+
+
+@app.post("/api/v1/online/evaluate")
+async def online_evaluate(body: OnlineEvalRequest) -> Dict[str, Any]:
+    """Evaluate a single Agent call in real time."""
+    tc = TCase(name=f"online-{body.input[:20]}", input=body.input)
+    ao = AOutput(
+        output=body.output,
+        tool_calls=body.tool_calls,
+        trace_id=body.trace_id,
+        latency_ms=body.latency_ms,
+    )
+    result = _online_evaluator.evaluate(tc, ao)
+    if result is None:
+        return {"status": "queued"}
+    return {
+        "score": result.overall_score,
+        "passed": result.passed,
+        "scores": result.scores,
+    }
+
+
+@app.get("/api/v1/online/stats")
+async def online_stats(window_minutes: int = 60) -> Dict[str, Any]:
+    """Get online evaluation statistics for a time window."""
+    return _online_evaluator.get_stats(window_minutes=window_minutes)
+
+
+@app.get("/api/v1/online/health")
+async def online_health() -> Dict[str, Any]:
+    """Get current health status."""
+    return _online_evaluator.get_health()
+
+
+@app.get("/api/v1/online/trend")
+async def online_trend(
+    window_minutes: int = 1440,
+    bucket_minutes: int = 60,
+) -> List[Dict[str, Any]]:
+    """Get time-series trend data."""
+    return _online_evaluator.get_trend(window_minutes=window_minutes, bucket_minutes=bucket_minutes)
 
 
 if __name__ == "__main__":
