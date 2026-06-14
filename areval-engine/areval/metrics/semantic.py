@@ -1,11 +1,82 @@
 """Semantic similarity metrics using embeddings."""
 
+import os
+from abc import ABC, abstractmethod
 from typing import Any, Optional
 
 import numpy as np
 
 from areval.metrics.base import Metric, MetricResult
-from areval.test_case import TestCase, AgentOutput
+from areval.test_case import AgentOutput, TestCase
+
+
+class EmbeddingProvider(ABC):
+    """Abstract base for embedding providers."""
+
+    @abstractmethod
+    def embed(self, text: str) -> np.ndarray:
+        """Return a normalized embedding vector for the given text."""
+        ...
+
+
+class OpenAIEmbeddingProvider(EmbeddingProvider):
+    """Embedding provider backed by OpenAI's embeddings API."""
+
+    def __init__(
+        self,
+        model: str = "text-embedding-3-small",
+        api_key: Optional[str] = None,
+    ):
+        self.model = model
+        self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
+        self._cache: dict[str, np.ndarray] = {}
+
+    def embed(self, text: str) -> np.ndarray:
+        if text in self._cache:
+            return self._cache[text]
+
+        try:
+            from openai import OpenAI
+        except ImportError as e:
+            raise ImportError(
+                "openai package is required for OpenAI embeddings. "
+                "Install with: pip install openai"
+            ) from e
+
+        client = OpenAI(api_key=self.api_key, timeout=60.0, max_retries=3)
+        response = client.embeddings.create(input=text, model=self.model)
+        vector = np.array(response.data[0].embedding, dtype=np.float32)
+
+        norm = np.linalg.norm(vector)
+        if norm > 0:
+            vector = vector / norm
+
+        self._cache[text] = vector
+        return vector
+
+
+class OfflineEmbeddingProvider(EmbeddingProvider):
+    """Deterministic offline embedding provider for CI and demo use.
+
+    Generates a pseudo-random unit vector from the hash of the input text.
+    This is NOT semantically meaningful and is only intended as a fallback
+    when no embedding API key is available.
+    """
+
+    def __init__(self, dimension: int = 1536):
+        self.dimension = dimension
+        self._cache: dict[str, np.ndarray] = {}
+
+    def embed(self, text: str) -> np.ndarray:
+        if text in self._cache:
+            return self._cache[text]
+
+        np.random.seed(hash(text) % (2**32))
+        vector = np.random.randn(self.dimension)
+        vector = vector / np.linalg.norm(vector)
+
+        self._cache[text] = vector
+        return vector
 
 
 class SemanticSimilarityMetric(Metric):
@@ -28,27 +99,40 @@ class SemanticSimilarityMetric(Metric):
         **kwargs: Any,
     ):
         super().__init__(threshold=threshold, **kwargs)
-        self.embedding_provider = embedding_provider
+        self.embedding_provider_name = embedding_provider
         self.embedding_model = embedding_model
-        self._embedding_cache: dict[str, np.ndarray] = {}
+        self._embedding_provider = self._create_provider(
+            embedding_provider, embedding_model, kwargs
+        )
+
+    def _create_provider(
+        self,
+        provider_name: str,
+        model: str,
+        kwargs: dict[str, Any],
+    ) -> EmbeddingProvider:
+        api_key = kwargs.get("api_key") or os.environ.get("OPENAI_API_KEY")
+
+        if provider_name == "openai" and api_key:
+            return OpenAIEmbeddingProvider(model=model, api_key=api_key)
+
+        if provider_name == "openai" and not api_key:
+            print(
+                "[SemanticSimilarityMetric] Warning: OPENAI_API_KEY not found. "
+                "Falling back to offline (deterministic) embeddings."
+            )
+
+        if provider_name not in ("openai", "offline"):
+            print(
+                f"[SemanticSimilarityMetric] Warning: unknown provider {provider_name!r}. "
+                "Falling back to offline embeddings."
+            )
+
+        return OfflineEmbeddingProvider()
 
     def _get_embedding(self, text: str) -> np.ndarray:
         """Get embedding vector for text."""
-        if text in self._embedding_cache:
-            return self._embedding_cache[text]
-
-        # Placeholder: in production, call OpenAI/Anthropic embedding API
-        # For the project skeleton, we simulate with a hash-based vector
-        # In real implementation:
-        #   from openai import OpenAI
-        #   client = OpenAI()
-        #   response = client.embeddings.create(input=text, model=self.embedding_model)
-        #   vector = np.array(response.data[0].embedding)
-        np.random.seed(hash(text) % (2**32))
-        vector = np.random.randn(1536)
-        vector = vector / np.linalg.norm(vector)
-        self._embedding_cache[text] = vector
-        return vector
+        return self._embedding_provider.embed(text)
 
     def _cosine_similarity(self, a: np.ndarray, b: np.ndarray) -> float:
         """Compute cosine similarity between two vectors."""
@@ -79,5 +163,6 @@ class SemanticSimilarityMetric(Metric):
             metadata={
                 "cosine_similarity": similarity,
                 "embedding_model": self.embedding_model,
+                "embedding_provider": self.embedding_provider_name,
             },
         )
