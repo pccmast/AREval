@@ -6,7 +6,8 @@ Inspired by DeepEval's G-Eval and industry best practices.
 Supported providers:
 - "openai": calls OpenAI Chat Completions API
 - "anthropic": calls Anthropic Messages API
-- "mock": returns a deterministic simulated response (for CI / offline use)
+- "mock": returns a heuristic simulated response (for CI / offline use,
+  produces distinguishable scores rather than a fixed constant)
 """
 
 import os
@@ -74,15 +75,61 @@ REASONING: <your detailed reasoning>
             return os.environ.get("ANTHROPIC_API_KEY")
         return None
 
-    def _mock_response(self) -> str:
-        """Deterministic simulated LLM response for offline/CI usage."""
-        return """
-SCORE: 0.75
-CORRECTNESS: 4
-COMPLETENESS: 3
-CLARITY: 4
-HELPFULNESS: 4
-REASONING: The response is generally accurate and well-structured. It addresses the main question but misses some nuanced details that would make it truly comprehensive.
+    def _mock_response(
+        self, expected_output: str, actual_output: str
+    ) -> str:
+        """Heuristic simulated LLM response for offline/CI usage.
+
+        Produces a distinguishable score based on token-level overlap
+        between expected and actual outputs, rather than a fixed
+        constant.  This allows the mock judge to differentiate between
+        good and poor responses even without a real LLM.
+
+        The heuristic:
+        - Splits both texts into lower-cased word tokens
+        - Computes Jaccard similarity on the token sets
+        - Scales to a 0.3–0.95 range with a mild length penalty
+        """
+        if not expected_output or not actual_output:
+            # No basis for comparison
+            return """
+SCORE: 0.50
+CORRECTNESS: 3
+COMPLETENESS: 2
+CLARITY: 3
+HELPFULNESS: 2
+REASONING: Unable to compute heuristic — missing expected or actual output.
+"""
+
+        exp_tokens = set(expected_output.lower().split())
+        act_tokens = set(actual_output.lower().split())
+
+        if not exp_tokens or not act_tokens:
+            overlap = 0.0
+        else:
+            overlap = len(exp_tokens & act_tokens) / len(exp_tokens | act_tokens)
+
+        # Map Jaccard [0, 1] → score [0.30, 0.95]
+        score = 0.30 + overlap * 0.65
+
+        # Mild length penalty: reward responses within 50%–200% of expected length
+        len_ratio = len(actual_output) / max(len(expected_output), 1)
+        if len_ratio < 0.5 or len_ratio > 2.0:
+            score = max(0.25, score - 0.10)
+
+        score = round(score, 2)
+
+        # Map score to 1-5 sub-scores proportionally
+        sub_score = max(1, min(5, round(score * 5)))
+        completeness_sub = max(1, min(5, round(overlap * 5)))
+
+        return f"""
+SCORE: {score}
+CORRECTNESS: {sub_score}
+COMPLETENESS: {completeness_sub}
+CLARITY: {sub_score}
+HELPFULNESS: {sub_score}
+REASONING: Heuristic evaluation — token overlap={overlap:.2f}, length_ratio={len_ratio:.2f}
 """
 
     def _call_openai(self, prompt: str, api_key: str) -> str:
@@ -124,7 +171,12 @@ REASONING: The response is generally accurate and well-structured. It addresses 
             return getattr(response.content[0], "text", "")
         return ""
 
-    def _call_llm(self, prompt: str) -> str:
+    def _call_llm(
+        self,
+        prompt: str,
+        expected_output: str = "",
+        actual_output: str = "",
+    ) -> str:
         """Call the LLM with the evaluation prompt.
 
         Falls back to the mock response when:
@@ -132,15 +184,15 @@ REASONING: The response is generally accurate and well-structured. It addresses 
         - no API key is configured and provider is openai/anthropic
         """
         if self.provider == "mock":
-            return self._mock_response()
+            return self._mock_response(expected_output, actual_output)
 
         api_key = self.api_key or self._api_key_from_env()
         if not api_key:
             print(
                 f"[LLMJudge] Warning: no API key found for provider={self.provider!r}. "
-                "Falling back to mock response."
+                "Falling back to heuristic mock response."
             )
-            return self._mock_response()
+            return self._mock_response(expected_output, actual_output)
 
         if self.provider == "openai":
             return self._call_openai(prompt, api_key)
@@ -178,13 +230,15 @@ REASONING: The response is generally accurate and well-structured. It addresses 
         return result
 
     def evaluate(self, test_case: TestCase, agent_output: AgentOutput) -> JudgeResult:
+        expected = test_case.expected_output or ""
+        actual = agent_output.output
         prompt = self.rubric.format(
             input=test_case.input,
-            expected_output=test_case.expected_output or "N/A",
-            actual_output=agent_output.output,
+            expected_output=expected,
+            actual_output=actual,
         )
 
-        response = self._call_llm(prompt)
+        response = self._call_llm(prompt, expected, actual)
         parsed = self._parse_response(response)
 
         return JudgeResult(

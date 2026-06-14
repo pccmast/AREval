@@ -144,9 +144,16 @@ class RegressionDetector:
         return self.detect(current_run.test_results, baseline_run.test_results)
 
     def _paired_ttest(self, a: List[float], b: List[float]) -> float:
-        """Calculate paired t-test p-value."""
+        """Calculate paired t-test p-value using scipy's t-distribution CDF.
+
+        Uses scipy.stats.t.cdf for accurate p-value computation, which is
+        essential for the small sample sizes (n >= 2) common in agent
+        evaluation regression testing.
+        """
         if len(a) != len(b) or len(a) < 2:
             return 1.0
+
+        from scipy import stats
 
         diffs = np.array(b) - np.array(a)
         mean_diff = np.mean(diffs)
@@ -157,15 +164,11 @@ class RegressionDetector:
 
         n = len(diffs)
         t_stat = mean_diff / (std_diff / math.sqrt(n))
+        df = n - 1
 
-        # Approximate p-value using normal distribution
-        # For production: use scipy.stats.t.cdf
-        try:
-            from math import erf
-            p_value = 0.5 * (1 + erf(-abs(t_stat) / math.sqrt(2)))
-            return min(1.0, p_value * 2)  # Two-tailed
-        except ImportError:
-            return 0.05 if abs(t_stat) > 1.96 else 0.5
+        # Two-tailed p-value from Student's t-distribution
+        p_value = 2.0 * stats.t.cdf(-abs(t_stat), df)
+        return float(p_value)
 
     def _cohens_d(self, a: List[float], b: List[float]) -> float:
         """Calculate Cohen's d effect size."""

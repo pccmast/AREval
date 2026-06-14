@@ -148,6 +148,8 @@ class EvaluationRun:
     total_cases: int = 0
     passed_cases: int = 0
     failed_cases: int = 0
+    skipped_cases: int = 0
+    timed_out_cases: int = 0
     error_cases: int = 0
     avg_score: float = 0.0
     total_cost_usd: float = 0.0
@@ -162,7 +164,9 @@ class EvaluationRun:
             return
         self.total_cases = len(self.test_results)
         self.passed_cases = sum(1 for r in self.test_results if r.passed)
-        self.failed_cases = sum(1 for r in self.test_results if not r.passed and r.status != TestStatus.ERROR)
+        self.failed_cases = sum(1 for r in self.test_results if r.status == TestStatus.FAILED)
+        self.skipped_cases = sum(1 for r in self.test_results if r.status == TestStatus.SKIPPED)
+        self.timed_out_cases = sum(1 for r in self.test_results if r.status == TestStatus.TIMEOUT)
         self.error_cases = sum(1 for r in self.test_results if r.status == TestStatus.ERROR)
         self.avg_score = sum(r.overall_score for r in self.test_results) / self.total_cases
         self.total_cost_usd = sum(r.agent_output.cost_usd for r in self.test_results)
@@ -194,6 +198,8 @@ class EvaluationRun:
             "total_cases": self.total_cases,
             "passed_cases": self.passed_cases,
             "failed_cases": self.failed_cases,
+            "skipped_cases": self.skipped_cases,
+            "timed_out_cases": self.timed_out_cases,
             "error_cases": self.error_cases,
             "pass_rate": self.pass_rate,
             "avg_score": self.avg_score,

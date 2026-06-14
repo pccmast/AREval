@@ -50,12 +50,18 @@ class TestLLMJudge:
 
     def test_llm_judge_parse_response(self) -> None:
         judge = LLMJudge(provider="mock")
-        response = judge._call_llm("dummy prompt")
-        parsed = judge._parse_response(response)
+        # Use evaluate() to provide expected/actual output for the heuristic
+        tc = TestCase(
+            name="parse_test",
+            input="What is the capital of France?",
+            expected_output="The capital of France is Paris.",
+        )
+        ao = AgentOutput(output="The capital of France is Paris.")
+        result = judge.evaluate(tc, ao)
 
-        assert parsed["score"] == 0.75
-        assert "correctness" in parsed["criteria_scores"]
-        assert parsed["criteria_scores"]["correctness"] == 4.0 / 5.0
+        assert result.score > 0.5  # heuristic should give high score for good match
+        assert "correctness" in result.criteria_scores
+        assert result.criteria_scores["correctness"] > 0.5
 
     def test_llm_judge_openai_no_key_fallback(self) -> None:
         """When no API key is present, openai provider should fall back to mock."""

@@ -36,6 +36,8 @@ class CIReporter:
             f"| Total Cases | {self.run.total_cases} |",
             f"| Passed | {self.run.passed_cases} ({self.run.pass_rate:.1%}) |",
             f"| Failed | {self.run.failed_cases} |",
+            f"| Skipped | {self.run.skipped_cases} |",
+            f"| Timed Out | {self.run.timed_out_cases} |",
             f"| Errors | {self.run.error_cases} |",
             f"| Avg Score | {self.run.avg_score:.3f} |",
             f"| Regressions | {self.run.regression_count} |",
@@ -81,15 +83,24 @@ class CIReporter:
     def github_commands(self) -> List[str]:
         """Generate GitHub Actions workflow commands.
 
-        Usage:
-            for cmd in reporter.github_commands():
-                print(cmd)
+        Uses the GITHUB_OUTPUT environment file (the modern replacement
+        for the deprecated `::set-output` command).
         """
         commands = []
 
-        # Set output variables
-        commands.append(f"::set-output name=pass_rate::{self.run.pass_rate:.4f}")
-        commands.append(f"::set-output name=regression_count::{self.run.regression_count}")
+        # Write output variables to GITHUB_OUTPUT
+        output_file = os.environ.get("GITHUB_OUTPUT")
+        if output_file:
+            try:
+                with open(output_file, "a") as f:
+                    f.write(f"pass_rate={self.run.pass_rate:.4f}\n")
+                    f.write(f"regression_count={self.run.regression_count}\n")
+            except OSError:
+                pass
+        else:
+            # Fallback for non-GitHub environments
+            commands.append(f"pass_rate={self.run.pass_rate:.4f}")
+            commands.append(f"regression_count={self.run.regression_count}")
 
         # Annotations for failed tests
         for result in self.run.test_results:
@@ -134,6 +145,9 @@ class JSONReporter:
             "total_cases": self.run.total_cases,
             "passed_cases": self.run.passed_cases,
             "failed_cases": self.run.failed_cases,
+            "skipped_cases": self.run.skipped_cases,
+            "timed_out_cases": self.run.timed_out_cases,
+            "error_cases": self.run.error_cases,
             "regression_count": self.run.regression_count,
             "total_cost_usd": self.run.total_cost_usd,
             "duration_seconds": self.run.duration_seconds,

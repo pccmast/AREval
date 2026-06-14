@@ -71,8 +71,8 @@ class OfflineEmbeddingProvider(EmbeddingProvider):
         if text in self._cache:
             return self._cache[text]
 
-        np.random.seed(hash(text) % (2**32))
-        vector = np.random.randn(self.dimension)
+        rng = np.random.RandomState(hash(text) % (2**32))
+        vector = rng.randn(self.dimension)
         vector = vector / np.linalg.norm(vector)
 
         self._cache[text] = vector

@@ -6,7 +6,9 @@ complete evaluation workflows.
 
 from __future__ import annotations
 
+import logging
 import time
+from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
 
 from areval.metrics.base import Metric
@@ -20,6 +22,8 @@ from areval.test_case import (
     EvaluationRun,
     TestStatus,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class Evaluator:
@@ -104,7 +108,7 @@ class Evaluator:
             run.test_results.append(result)
 
         # Compute aggregates
-        run.completed_at = __import__("datetime").datetime.utcnow()
+        run.completed_at = datetime.utcnow()
         run._compute_aggregates()
 
         # Regression detection
@@ -116,21 +120,19 @@ class Evaluator:
                 )
                 if report.has_regression:
                     run.regression_count = len(report.affected_tests)
-                    # Mark affected results
+                    # Build O(1) lookup map from baseline results
+                    baseline_score_map = {
+                        r.test_case.id: r.overall_score
+                        for r in baseline.test_results
+                    }
                     affected_ids = set(report.affected_tests)
                     for result in run.test_results:
                         if result.test_case.id in affected_ids:
                             result.is_regression = True
-                            result.regression_delta = result.overall_score - (
-                                baseline.test_results[
-                                    [r.test_case.id for r in baseline.test_results].index(
-                                        result.test_case.id
-                                    )
-                                ].overall_score
-                                if result.test_case.id
-                                in [r.test_case.id for r in baseline.test_results]
-                                else result.overall_score
+                            baseline_score = baseline_score_map.get(
+                                result.test_case.id, result.overall_score
                             )
+                            result.regression_delta = result.overall_score - baseline_score
 
         self._results_history.append(run)
         return run
@@ -188,6 +190,10 @@ class Evaluator:
                 result = metric.measure(test_case, agent_output)
                 scores[result.name] = result.score
             except Exception as e:
+                logger.warning(
+                    "Metric '%s' failed for test case '%s': %s",
+                    metric.name, test_case.name, e,
+                )
                 scores[metric.name] = 0.0
 
         # Apply judges
@@ -199,6 +205,10 @@ class Evaluator:
                 if result.reasoning:
                     judge_reasoning_parts.append(result.reasoning)
             except Exception as e:
+                logger.warning(
+                    "Judge '%s' failed for test case '%s': %s",
+                    judge.name, test_case.name, e,
+                )
                 scores[judge.name] = 0.0
 
         # Calculate overall score (average of all scores)
@@ -245,6 +255,8 @@ class Evaluator:
             f"Total Cases:  {run.total_cases}",
             f"Passed:       {run.passed_cases} ({run.pass_rate:.1%})",
             f"Failed:       {run.failed_cases}",
+            f"Skipped:      {run.skipped_cases}",
+            f"Timed Out:    {run.timed_out_cases}",
             f"Errors:       {run.error_cases}",
             f"Average Score: {run.avg_score:.3f}",
             f"Regressions:  {run.regression_count}",

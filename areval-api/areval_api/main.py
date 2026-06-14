@@ -9,7 +9,9 @@ Provides HTTP endpoints for:
 
 from __future__ import annotations
 
+import json
 import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Query
@@ -31,6 +33,7 @@ from areval.online.evaluator import OnlineEvaluator
 from areval.online.storage import TimeSeriesStorage
 from areval.online.monitors import QualityMonitor, AlertConfig
 from areval.test_case import TestCase as TCase, AgentOutput as AOutput
+from areval.utils.serialization import reconstruct_run
 
 app = FastAPI(
     title="AREval API",
@@ -39,9 +42,12 @@ app = FastAPI(
 )
 
 # CORS for dashboard integration
+allowed_origins_str = os.environ.get(
+    "AREVAL_CORS_ORIGINS", "http://localhost:3000"
+)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[o.strip() for o in allowed_origins_str.split(",")],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -51,8 +57,35 @@ app.add_middleware(
 dataset_manager = DatasetManager()
 baseline_manager = BaselineManager()
 
-# In-memory storage for demo (use DB in production)
+# JSON file-backed evaluation run storage
+_EVAL_RUNS_DIR = Path(os.environ.get("AREVAL_RUNS_DIR", ".areval/runs"))
+_EVAL_RUNS_DIR.mkdir(parents=True, exist_ok=True)
 _eval_runs: Dict[str, EvaluationRun] = {}
+
+
+def _save_run(run: EvaluationRun) -> None:
+    """Persist an evaluation run to a JSON file."""
+    file_path = _EVAL_RUNS_DIR / f"{run.id}.json"
+    with open(file_path, "w", encoding="utf-8") as f:
+        json.dump(run.to_dict(), f, indent=2, default=str)
+
+
+def _load_all_runs() -> None:
+    """Load all persisted evaluation runs from disk."""
+    if not _EVAL_RUNS_DIR.exists():
+        return
+    for file_path in _EVAL_RUNS_DIR.glob("*.json"):
+        try:
+            with open(file_path, encoding="utf-8") as f:
+                data = json.load(f)
+            run = reconstruct_run(data)
+            _eval_runs[run.id] = run
+        except (json.JSONDecodeError, KeyError):
+            continue
+
+
+# Load existing runs on startup
+_load_all_runs()
 
 # Online evaluation instance (singleton for the API process)
 _online_storage = TimeSeriesStorage()
@@ -243,6 +276,7 @@ async def create_evaluation(body: CreateEvaluationRequest) -> Dict[str, Any]:
     )
 
     _eval_runs[eval_run.id] = eval_run
+    _save_run(eval_run)
 
     return {
         "run_id": eval_run.id,

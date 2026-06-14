@@ -28,7 +28,8 @@ from areval.metrics import get_metric
 from areval.judges import get_judge
 from areval.datasets import DatasetManager
 from areval.regression.baseline import BaselineManager
-from areval.test_case import TestCase, AgentOutput, EvaluationRun, TestResult, TestStatus
+from areval.test_case import TestCase, AgentOutput, EvaluationRun
+from areval.utils.serialization import reconstruct_run
 
 app = typer.Typer(
     name="areval",
@@ -49,46 +50,11 @@ def _load_results_json(path: str) -> Dict[str, Any]:
 
 
 def _reconstruct_run(data: Dict[str, Any]) -> EvaluationRun:
-    """Reconstruct an EvaluationRun from its serialized dict."""
-    results: list[TestResult] = []
-    for r_data in data.get("test_results", []):
-        tc_data = r_data["test_case"]
-        ao_data = r_data["agent_output"]
-        tc = TestCase.from_dict(tc_data)
-        ao = AgentOutput(
-            output=ao_data.get("output", ""),
-            tool_calls=ao_data.get("tool_calls", []),
-            latency_ms=ao_data.get("latency_ms", 0.0),
-            token_usage=ao_data.get("token_usage", {}),
-            cost_usd=ao_data.get("cost_usd", 0.0),
-            trace_id=ao_data.get("trace_id"),
-        )
-        tr = TestResult(
-            test_case=tc,
-            agent_output=ao,
-            status=TestStatus(r_data.get("status", "passed")),
-            scores=r_data.get("scores", {}),
-            overall_score=r_data.get("overall_score", 0.0),
-            threshold=r_data.get("threshold", 0.7),
-            error_message=r_data.get("error_message"),
-            judge_reasoning=r_data.get("judge_reasoning"),
-            execution_time_ms=r_data.get("execution_time_ms", 0.0),
-            baseline_score=r_data.get("baseline_score"),
-            regression_delta=r_data.get("regression_delta"),
-            is_regression=r_data.get("is_regression", False),
-        )
-        results.append(tr)
+    """Reconstruct an EvaluationRun from its serialized dict.
 
-    run = EvaluationRun(
-        name=data.get("name", "loaded"),
-        description=data.get("description", ""),
-        config=data.get("config", {}),
-    )
-    # Manually set results and re-compute aggregates
-    run.test_results = results
-    run.total_cases = data.get("total_cases", len(results))
-    run._compute_aggregates()
-    return run
+    Delegates to the shared :func:`areval.utils.serialization.reconstruct_run`.
+    """
+    return reconstruct_run(data)
 
 
 def _parse_yaml_config(config_path: str) -> Dict[str, Any]:

@@ -11,7 +11,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from areval.test_case import TestCase, AgentOutput, TestResult, EvaluationRun, TestStatus
+from areval.test_case import TestResult, EvaluationRun
+from areval.utils.serialization import reconstruct_test_result
 
 
 @dataclass
@@ -38,37 +39,6 @@ class Baseline:
             "created_at": self.created_at.isoformat(),
             "tags": self.tags,
         }
-
-
-def _reconstruct_test_result(data: Dict[str, Any]) -> TestResult:
-    """Reconstruct a TestResult from its serialized dict."""
-    tc_data = data["test_case"]
-    ao_data = data["agent_output"]
-
-    tc = TestCase.from_dict(tc_data)
-    ao = AgentOutput(
-        output=ao_data.get("output", ""),
-        tool_calls=ao_data.get("tool_calls", []),
-        latency_ms=ao_data.get("latency_ms", 0.0),
-        token_usage=ao_data.get("token_usage", {}),
-        cost_usd=ao_data.get("cost_usd", 0.0),
-        trace_id=ao_data.get("trace_id"),
-    )
-
-    return TestResult(
-        test_case=tc,
-        agent_output=ao,
-        status=TestStatus(data.get("status", "passed")),
-        scores=data.get("scores", {}),
-        overall_score=data.get("overall_score", 0.0),
-        threshold=data.get("threshold", 0.7),
-        error_message=data.get("error_message"),
-        judge_reasoning=data.get("judge_reasoning"),
-        execution_time_ms=data.get("execution_time_ms", 0.0),
-        baseline_score=data.get("baseline_score"),
-        regression_delta=data.get("regression_delta"),
-        is_regression=data.get("is_regression", False),
-    )
 
 
 class BaselineManager:
@@ -140,8 +110,20 @@ class BaselineManager:
         self,
         results: List[TestResult],
         baseline_id: Optional[str] = None,
+        delta_threshold: float = 0.05,
     ) -> Dict[str, Any]:
-        """Compare results against a baseline and return deltas."""
+        """Compare results against a baseline and return deltas.
+
+        Parameters
+        ----------
+        results : list[TestResult]
+            The current evaluation results to compare.
+        baseline_id : str, optional
+            ID of a specific baseline.  Defaults to the most recent.
+        delta_threshold : float
+            Minimum score drop to flag a test as regressed.
+            Matches :attr:`RegressionDetector.absolute_threshold` (default 0.05).
+        """
         baseline = self.get_baseline(baseline_id) if baseline_id else self.get_latest_baseline()
         if not baseline:
             return {"error": "No baseline found"}
@@ -158,7 +140,7 @@ class BaselineManager:
                     "baseline_score": baseline_score,
                     "current_score": result.overall_score,
                     "delta": result.overall_score - baseline_score,
-                    "regressed": result.overall_score < baseline_score - 0.05,
+                    "regressed": result.overall_score < baseline_score - delta_threshold,
                 })
 
         return {
@@ -188,7 +170,7 @@ class BaselineManager:
                 # Reconstruct test results
                 test_results: list[TestResult] = []
                 for tr_data in data.get("test_results", []):
-                    test_results.append(_reconstruct_test_result(tr_data))
+                    test_results.append(reconstruct_test_result(tr_data))
 
                 baseline = Baseline(
                     id=data["id"],
