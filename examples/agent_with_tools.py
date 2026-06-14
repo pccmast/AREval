@@ -4,16 +4,18 @@ Demonstrates evaluating an agent that uses tools,
 with tool call accuracy metrics and tracing.
 """
 
+from typing import Any
+
 from areval.evaluator import Evaluator
 from areval.test_case import TestCase, AgentOutput
 from areval.metrics import ToolCallAccuracyMetric, TaskCompletionMetric
-from areval.sdk.decorators import eval_trace
-from areval.sdk.reporters import JSONReporter
+from areval_sdk.decorators import eval_trace
+from areval_sdk.reporters import JSONReporter
 
 
 # Simulate a tool-using agent with tracing
 @eval_trace(name="weather_agent")
-def weather_agent(query: str) -> tuple[str, list]:
+def weather_agent(query: str) -> tuple[str, list[dict[str, Any]]]:
     """An agent that fetches weather information."""
     tool_calls = []
 

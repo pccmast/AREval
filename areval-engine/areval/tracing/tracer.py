@@ -127,7 +127,7 @@ class EvalTracer:
 
     def export(self) -> None:
         """Export all traces to configured exporters."""
-        traces: Dict[str, List[Dict]] = {}
+        traces: Dict[str, List[Dict[str, Any]]] = {}
         for span in self._spans:
             tid = span.trace_id or "unknown"
             if tid not in traces:

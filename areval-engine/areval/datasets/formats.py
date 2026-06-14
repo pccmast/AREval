@@ -7,7 +7,7 @@ and custom formats.
 import csv
 import json
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from areval.test_case import TestCase
 

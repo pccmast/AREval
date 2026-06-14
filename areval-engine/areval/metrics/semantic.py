@@ -30,7 +30,7 @@ class SemanticSimilarityMetric(Metric):
         super().__init__(threshold=threshold, **kwargs)
         self.embedding_provider = embedding_provider
         self.embedding_model = embedding_model
-        self._embedding_cache: dict = {}
+        self._embedding_cache: dict[str, np.ndarray] = {}
 
     def _get_embedding(self, text: str) -> np.ndarray:
         """Get embedding vector for text."""

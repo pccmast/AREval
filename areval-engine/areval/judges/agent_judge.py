@@ -92,7 +92,7 @@ class AgentJudge(Judge):
         self,
         test_case: TestCase,
         agent_output: AgentOutput,
-        verifications: List[Dict],
+        verifications: List[Dict[str, Any]],
     ) -> float:
         """Calculate overall quality score."""
         scores = []
@@ -117,7 +117,7 @@ class AgentJudge(Judge):
     def _generate_reasoning(
         self,
         claims: List[str],
-        verifications: List[Dict],
+        verifications: List[Dict[str, Any]],
         score: float,
     ) -> str:
         """Generate human-readable reasoning."""

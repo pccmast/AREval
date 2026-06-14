@@ -86,7 +86,7 @@ REASONING: The response is generally accurate and well-structured. It addresses 
 
     def _parse_response(self, response: str) -> Dict[str, Any]:
         """Parse structured LLM response."""
-        result = {
+        result: Dict[str, Any] = {
             "score": 0.5,
             "reasoning": "",
             "criteria_scores": {},

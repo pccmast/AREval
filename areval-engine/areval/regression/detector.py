@@ -118,7 +118,7 @@ class RegressionDetector:
 
         # Statistical tests
         if len(deltas) >= 2:
-            report.score_delta = np.mean(deltas)
+            report.score_delta = float(np.mean(deltas))
             report.p_value = self._paired_ttest(baseline_scores, current_scores)
             report.effect_size = self._cohens_d(baseline_scores, current_scores)
 
@@ -179,7 +179,7 @@ class RegressionDetector:
         if std_diff == 0:
             return 0.0
 
-        return abs(mean_diff / std_diff)
+        return float(abs(mean_diff / std_diff))
 
     def classify_severity(self, report: RegressionReport) -> str:
         """Classify regression severity."""

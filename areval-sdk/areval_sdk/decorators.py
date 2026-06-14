@@ -28,8 +28,8 @@ def eval_trace(
     name: Optional[str] = None,
     capture_input: bool = True,
     capture_output: bool = True,
-    attributes: Optional[dict] = None,
-) -> Callable:
+    attributes: Optional[dict[str, Any]] = None,
+) -> Callable[..., Any]:
     """Decorator to trace agent function execution.
 
     Captures latency, input/output, and custom attributes.
@@ -40,7 +40,7 @@ def eval_trace(
         def search(query: str) -> str:
             return search_api(query)
     """
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             span_name = name or func.__name__
@@ -81,7 +81,7 @@ def eval_metric(
         def get_answer(question: str) -> str:
             return llm.generate(question)
     """
-    def decorator(func: Callable) -> Callable:
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             result = func(*args, **kwargs)

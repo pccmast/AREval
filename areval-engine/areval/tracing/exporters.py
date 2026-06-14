@@ -23,7 +23,7 @@ class ConsoleExporter:
                     for k, v in span["attributes"].items():
                         print(f"{indent}    {k}: {v}")
 
-    def _depth(self, spans: List[Dict], span: Dict) -> int:
+    def _depth(self, spans: List[Dict[str, Any]], span: Dict[str, Any]) -> int:
         """Calculate span depth in trace tree."""
         depth = 0
         parent_id = span.get("parent_id")
