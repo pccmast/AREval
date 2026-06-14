@@ -2,12 +2,18 @@
 
 Uses a powerful LLM to evaluate agent outputs against rubrics.
 Inspired by DeepEval's G-Eval and industry best practices.
+
+Supported providers:
+- "openai": calls OpenAI Chat Completions API
+- "anthropic": calls Anthropic Messages API
+- "mock": returns a deterministic simulated response (for CI / offline use)
 """
 
+import os
 from typing import Any, Dict, List, Optional
 
 from areval.judges.base import Judge, JudgeResult
-from areval.test_case import TestCase, AgentOutput
+from areval.test_case import AgentOutput, TestCase
 
 
 class LLMJudge(Judge):
@@ -46,35 +52,30 @@ REASONING: <your detailed reasoning>
     def __init__(
         self,
         threshold: float = 0.7,
-        model: str = "gpt-4",
+        model: str = "gpt-4o-mini",
         provider: str = "openai",
         rubric: Optional[str] = None,
         criteria: Optional[List[str]] = None,
+        api_key: Optional[str] = None,
         **kwargs: Any,
     ):
         super().__init__(threshold=threshold, **kwargs)
         self.model = model
         self.provider = provider
+        self.api_key = api_key
         self.rubric = rubric or self.DEFAULT_RUBRIC
         self.criteria = criteria or ["correctness", "completeness", "clarity", "helpfulness"]
 
-    def _call_llm(self, prompt: str) -> str:
-        """Call the LLM with the evaluation prompt.
+    def _api_key_from_env(self) -> Optional[str]:
+        """Read API key from environment variables."""
+        if self.provider == "openai":
+            return os.environ.get("OPENAI_API_KEY")
+        if self.provider == "anthropic":
+            return os.environ.get("ANTHROPIC_API_KEY")
+        return None
 
-        In production: Integrate with OpenAI/Anthropic API
-        For skeleton: Return simulated response
-        """
-        # Simulated response for project skeleton
-        # Real implementation:
-        #   if self.provider == "openai":
-        #       from openai import OpenAI
-        #       client = OpenAI()
-        #       response = client.chat.completions.create(
-        #           model=self.model,
-        #           messages=[{"role": "user", "content": prompt}],
-        #           temperature=0.0,
-        #       )
-        #       return response.choices[0].message.content
+    def _mock_response(self) -> str:
+        """Deterministic simulated LLM response for offline/CI usage."""
         return """
 SCORE: 0.75
 CORRECTNESS: 4
@@ -83,6 +84,70 @@ CLARITY: 4
 HELPFULNESS: 4
 REASONING: The response is generally accurate and well-structured. It addresses the main question but misses some nuanced details that would make it truly comprehensive.
 """
+
+    def _call_openai(self, prompt: str, api_key: str) -> str:
+        """Call OpenAI Chat Completions API."""
+        try:
+            from openai import OpenAI
+        except ImportError as e:
+            raise ImportError(
+                "openai package is required for provider='openai'. "
+                "Install with: pip install openai"
+            ) from e
+
+        client = OpenAI(api_key=api_key, timeout=60.0, max_retries=3)
+        response = client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0,
+        )
+        return response.choices[0].message.content or ""
+
+    def _call_anthropic(self, prompt: str, api_key: str) -> str:
+        """Call Anthropic Messages API."""
+        try:
+            from anthropic import Anthropic
+        except ImportError as e:
+            raise ImportError(
+                "anthropic package is required for provider='anthropic'. "
+                "Install with: pip install anthropic"
+            ) from e
+
+        client = Anthropic(api_key=api_key, timeout=60.0, max_retries=3)
+        response = client.messages.create(
+            model=self.model,
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0,
+        )
+        if response.content:
+            return getattr(response.content[0], "text", "")
+        return ""
+
+    def _call_llm(self, prompt: str) -> str:
+        """Call the LLM with the evaluation prompt.
+
+        Falls back to the mock response when:
+        - provider is explicitly "mock"
+        - no API key is configured and provider is openai/anthropic
+        """
+        if self.provider == "mock":
+            return self._mock_response()
+
+        api_key = self.api_key or self._api_key_from_env()
+        if not api_key:
+            print(
+                f"[LLMJudge] Warning: no API key found for provider={self.provider!r}. "
+                "Falling back to mock response."
+            )
+            return self._mock_response()
+
+        if self.provider == "openai":
+            return self._call_openai(prompt, api_key)
+        if self.provider == "anthropic":
+            return self._call_anthropic(prompt, api_key)
+
+        raise ValueError(f"Unsupported LLM provider: {self.provider!r}")
 
     def _parse_response(self, response: str) -> Dict[str, Any]:
         """Parse structured LLM response."""
@@ -127,5 +192,8 @@ REASONING: The response is generally accurate and well-structured. It addresses 
             reasoning=parsed["reasoning"],
             criteria_scores=parsed.get("criteria_scores", {}),
             threshold=self.threshold,
-            metadata={"model": self.model, "provider": self.provider},
+            metadata={
+                "model": self.model,
+                "provider": self.provider,
+            },
         )
