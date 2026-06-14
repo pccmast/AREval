@@ -1,0 +1,43 @@
+version: "3.8"
+
+services:
+  # AREval API Server
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    volumes:
+      - ./.areval:/app/.areval
+    command: uvicorn areval_api.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Dashboard (Next.js)
+  dashboard:
+    build:
+      context: ./areval-dashboard
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - api
+
+  # Optional: PostgreSQL for production storage
+  # db:
+  #   image: postgres:16-alpine
+  #   environment:
+  #     POSTGRES_USER: areval
+  #     POSTGRES_PASSWORD: areval
+  #     POSTGRES_DB: areval
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+
+# volumes:
+#   postgres_data:

@@ -1,0 +1,77 @@
+# AREval Configuration Example
+# This configuration defines an evaluation pipeline
+
+evaluation:
+  name: "Production Agent Evaluation"
+  description: "Full evaluation suite for production agent"
+  threshold: 0.75
+  
+  # Test dataset
+  dataset:
+    path: "test_cases.jsonl"
+    format: "jsonl"
+  
+  # Metrics to apply (processed in order)
+  metrics:
+    - name: "exact_match"
+      threshold: 1.0
+      config:
+        case_sensitive: false
+        strip_whitespace: true
+    
+    - name: "semantic_similarity"
+      threshold: 0.7
+      config:
+        embedding_model: "text-embedding-3-small"
+    
+    - name: "faithfulness"
+      threshold: 0.75
+    
+    - name: "answer_relevance"
+      threshold: 0.7
+    
+    - name: "tool_call_accuracy"
+      threshold: 0.9
+      config:
+        check_order: true
+        check_params: true
+    
+    - name: "task_completion"
+      threshold: 0.85
+
+  # Judges for nuanced evaluation
+  judges:
+    - name: "llm_judge"
+      threshold: 0.7
+      config:
+        model: "gpt-4"
+        criteria:
+          - correctness
+          - completeness
+          - clarity
+          - helpfulness
+
+  # Regression detection settings
+  regression:
+    compare_baseline: true
+    significance_threshold: 0.05
+    min_effect_size: 0.2
+    absolute_threshold: 0.05
+    auto_baseline: true
+
+  # Output configuration
+  output:
+    format: "json"
+    path: "results.json"
+    dashboard: true
+
+  # Tracing configuration
+  tracing:
+    enabled: true
+    correlation:
+      gateway_trace_id_header: "x-gateway-trace-id"
+      scheduler_trace_id_header: "x-scheduler-trace-id"
+    exporters:
+      - type: "console"
+      - type: "file"
+        path: ".areval/traces.json"

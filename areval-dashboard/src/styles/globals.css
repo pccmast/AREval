@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 15, 23, 42;
+  --background-rgb: 248, 250, 252;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: rgb(var(--background-rgb));
+}
+
+@layer components {
+  .card {
+    @apply bg-white rounded-xl shadow-sm border border-slate-200 p-6;
+  }
+
+  .metric-value {
+    @apply text-3xl font-bold text-slate-900;
+  }
+
+  .metric-label {
+    @apply text-sm font-medium text-slate-500;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .badge-success {
+    @apply badge bg-success-100 text-success-600;
+  }
+
+  .badge-warning {
+    @apply badge bg-warning-100 text-warning-600;
+  }
+
+  .badge-danger {
+    @apply badge bg-danger-100 text-danger-600;
+  }
+}

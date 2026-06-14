@@ -1,0 +1,75 @@
+name: AREval CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          pip install -e ".[dev,all]"
+
+      - name: Run tests
+        run: |
+          pytest tests/ -v --cov=areval --cov-report=xml
+
+      - name: Run type checks
+        run: |
+          mypy areval-engine/areval
+
+      - name: Run linting
+        run: |
+          ruff check areval-engine/areval
+          black --check areval-engine/areval
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+
+  evaluate:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install AREval
+        run: |
+          pip install -e ".[all]"
+
+      - name: Run evaluation
+        run: |
+          areval run --config examples/eval_config.yaml --dataset examples/test_cases.jsonl --output results.json
+        continue-on-error: true
+
+      - name: Check for regressions
+        run: |
+          areval compare --current results.json --baseline latest
+        continue-on-error: true
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results
+          path: results.json
