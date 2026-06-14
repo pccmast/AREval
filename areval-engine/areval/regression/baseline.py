@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from areval.test_case import TestResult, EvaluationRun
+from areval.test_case import TestCase, AgentOutput, TestResult, EvaluationRun, TestStatus
 
 
 @dataclass
@@ -38,6 +38,37 @@ class Baseline:
             "created_at": self.created_at.isoformat(),
             "tags": self.tags,
         }
+
+
+def _reconstruct_test_result(data: Dict[str, Any]) -> TestResult:
+    """Reconstruct a TestResult from its serialized dict."""
+    tc_data = data["test_case"]
+    ao_data = data["agent_output"]
+
+    tc = TestCase.from_dict(tc_data)
+    ao = AgentOutput(
+        output=ao_data.get("output", ""),
+        tool_calls=ao_data.get("tool_calls", []),
+        latency_ms=ao_data.get("latency_ms", 0.0),
+        token_usage=ao_data.get("token_usage", {}),
+        cost_usd=ao_data.get("cost_usd", 0.0),
+        trace_id=ao_data.get("trace_id"),
+    )
+
+    return TestResult(
+        test_case=tc,
+        agent_output=ao,
+        status=TestStatus(data.get("status", "passed")),
+        scores=data.get("scores", {}),
+        overall_score=data.get("overall_score", 0.0),
+        threshold=data.get("threshold", 0.7),
+        error_message=data.get("error_message"),
+        judge_reasoning=data.get("judge_reasoning"),
+        execution_time_ms=data.get("execution_time_ms", 0.0),
+        baseline_score=data.get("baseline_score"),
+        regression_delta=data.get("regression_delta"),
+        is_regression=data.get("is_regression", False),
+    )
 
 
 class BaselineManager:
@@ -145,7 +176,7 @@ class BaselineManager:
             json.dump(baseline.to_dict(), f, indent=2, default=str)
 
     def _load_all(self) -> None:
-        """Load all baselines from storage."""
+        """Load all baselines from storage including test results."""
         if not self.storage_path.exists():
             return
 
@@ -153,13 +184,20 @@ class BaselineManager:
             try:
                 with open(file_path) as f:
                     data = json.load(f)
-                # Simplified loading — full implementation would reconstruct TestResult objects
+
+                # Reconstruct test results
+                test_results: list[TestResult] = []
+                for tr_data in data.get("test_results", []):
+                    test_results.append(_reconstruct_test_result(tr_data))
+
                 baseline = Baseline(
                     id=data["id"],
                     name=data["name"],
                     description=data.get("description", ""),
                     run_id=data.get("run_id", ""),
+                    test_results=test_results,
                     tags=data.get("tags", []),
+                    metadata=data.get("metadata", {}),
                 )
                 self._baselines[baseline.id] = baseline
             except (json.JSONDecodeError, KeyError):
