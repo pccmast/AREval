@@ -149,12 +149,12 @@ class Evaluator:
                 output.latency_ms = (time.time() - start) * 1000
                 outputs.append(output)
             except Exception as e:
-                # Return error output
+                # Return error output with explicit error flag
                 outputs.append(
                     AgentOutput(
                         output="",
                         latency_ms=(time.time() - start) * 1000,
-                        metadata={"error": str(e)},
+                        metadata={"error": str(e), "_agent_error": True},
                     )
                 )
         return outputs
@@ -167,6 +167,20 @@ class Evaluator:
         """Evaluate a single test case."""
         start_time = time.time()
         scores: Dict[str, float] = {}
+
+        # Check for agent execution errors
+        agent_error = agent_output.metadata.get("_agent_error", False)
+        if agent_error:
+            return TestResult(
+                test_case=test_case,
+                agent_output=agent_output,
+                status=TestStatus.ERROR,
+                scores={"error": 0.0},
+                overall_score=0.0,
+                threshold=self.threshold,
+                error_message=str(agent_output.metadata.get("error", "Agent execution failed")),
+                execution_time_ms=(time.time() - start_time) * 1000,
+            )
 
         # Apply metrics
         for metric in self.metrics:
