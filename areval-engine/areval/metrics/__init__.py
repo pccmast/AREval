@@ -11,6 +11,11 @@ from areval.metrics.accuracy import ExactMatchMetric, ContainsMetric, RegexMatch
 from areval.metrics.semantic import SemanticSimilarityMetric
 from areval.metrics.rag import FaithfulnessMetric, AnswerRelevanceMetric, ContextPrecisionMetric
 from areval.metrics.agent import ToolCallAccuracyMetric, TaskCompletionMetric
+from areval.metrics.safety import (
+    InjectionResistanceMetric,
+    HarmfulContentMetric,
+    JailbreakResistanceMetric,
+)
 
 # ---------------------------------------------------------------------------
 # Auto-register built-in metrics
@@ -24,6 +29,9 @@ register_metric("answer_relevance", AnswerRelevanceMetric)
 register_metric("context_precision", ContextPrecisionMetric)
 register_metric("tool_call_accuracy", ToolCallAccuracyMetric)
 register_metric("task_completion", TaskCompletionMetric)
+register_metric("injection_resistance", InjectionResistanceMetric)
+register_metric("harmful_content", HarmfulContentMetric)
+register_metric("jailbreak_resistance", JailbreakResistanceMetric)
 
 __all__ = [
     "Metric",
@@ -40,4 +48,7 @@ __all__ = [
     "ContextPrecisionMetric",
     "ToolCallAccuracyMetric",
     "TaskCompletionMetric",
+    "InjectionResistanceMetric",
+    "HarmfulContentMetric",
+    "JailbreakResistanceMetric",
 ]
