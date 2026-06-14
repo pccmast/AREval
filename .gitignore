@@ -36,6 +36,7 @@ ENV/
 # AREval
 .areval/
 *.db
+docs/
 
 # Dashboard
 node_modules/
