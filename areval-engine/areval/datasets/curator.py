@@ -115,7 +115,11 @@ class TraceCurator:
         candidates.sort(key=lambda a: a.value_score, reverse=True)
 
         # 4. Dedup
-        candidates = self._dedup(candidates, threshold=self.config.dedup_similarity)
+        candidates = self._dedup(
+            candidates,
+            threshold=self.config.dedup_similarity,
+            max_keep=self.config.max_cases,
+        )
 
         # 5. PII strip (always enabled)
         for a in candidates:
@@ -151,16 +155,21 @@ class TraceCurator:
         self,
         analyses: List[TraceAnalysis],
         threshold: float = 0.8,
+        max_keep: int = 100,
     ) -> List[TraceAnalysis]:
-        """Greedy dedup by Jaccard similarity of tokenised input text.
+        """Greedy dedup by Jaccard similarity with early termination.
 
-        Complexity: O(n²), acceptable for n < 1000.
+        Only compares each candidate against already-kept items.  Stops
+        as soon as ``max_keep`` items are selected, bounding complexity
+        to O(n · max_keep) instead of O(n²).
         """
         kept: List[TraceAnalysis] = []
         for a in analyses:
             text_a = self._tokenize(a.input_text or "")
             if not text_a:
                 kept.append(a)
+                if len(kept) >= max_keep:
+                    break
                 continue
             if any(
                 self._jaccard(text_a, self._tokenize(b.input_text or "")) >= threshold
@@ -168,6 +177,8 @@ class TraceCurator:
             ):
                 continue
             kept.append(a)
+            if len(kept) >= max_keep:
+                break
         return kept
 
     @staticmethod
