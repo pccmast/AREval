@@ -148,7 +148,7 @@ class DatasetManager:
     def _save(self, dataset: Dataset) -> None:
         """Persist dataset to disk."""
         file_path = self.storage_path / f"{dataset.id}.json"
-        with open(file_path, "w") as f:
+        with open(file_path, "w", encoding="utf-8") as f:
             json.dump(dataset.to_dict(), f, indent=2, default=str)
 
     def create_from_traces(
@@ -192,7 +192,7 @@ class DatasetManager:
 
         for file_path in self.storage_path.glob("*.json"):
             try:
-                with open(file_path) as f:
+                with open(file_path, encoding="utf-8") as f:
                     data = json.load(f)
 
                 test_cases = [TestCase.from_dict(tc) for tc in data.get("test_cases", [])]

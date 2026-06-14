@@ -15,7 +15,7 @@ from areval.test_case import TestCase
 def load_jsonl(path: str) -> List[TestCase]:
     """Load test cases from JSONL file."""
     test_cases = []
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line:
@@ -27,7 +27,7 @@ def load_jsonl(path: str) -> List[TestCase]:
 
 def save_jsonl(test_cases: List[TestCase], path: str) -> None:
     """Save test cases to JSONL file."""
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         for tc in test_cases:
             f.write(json.dumps(tc.to_dict(), default=str) + "\n")
 
@@ -49,7 +49,7 @@ def load_csv(path: str, mapping: Optional[Dict[str, str]] = None) -> List[TestCa
     mapping = mapping or default_mapping
 
     test_cases = []
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
             data = {k: row.get(v, "") for k, v in mapping.items()}
@@ -75,7 +75,7 @@ def load_swe_bench(path: str, repo_filter: Optional[List[str]] = None) -> List[T
         repo_filter: Optional list of repo names to filter
     """
     test_cases = []
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line:
@@ -114,6 +114,6 @@ def save_swe_bench_format(test_cases: List[TestCase], path: str) -> None:
         }
         records.append(record)
 
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         for record in records:
             f.write(json.dumps(record) + "\n")

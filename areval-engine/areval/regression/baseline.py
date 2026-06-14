@@ -172,7 +172,7 @@ class BaselineManager:
     def _save(self, baseline: Baseline) -> None:
         """Persist baseline to disk."""
         file_path = self.storage_path / f"{baseline.id}.json"
-        with open(file_path, "w") as f:
+        with open(file_path, "w", encoding="utf-8") as f:
             json.dump(baseline.to_dict(), f, indent=2, default=str)
 
     def _load_all(self) -> None:
@@ -182,7 +182,7 @@ class BaselineManager:
 
         for file_path in self.storage_path.glob("*.json"):
             try:
-                with open(file_path) as f:
+                with open(file_path, encoding="utf-8") as f:
                     data = json.load(f)
 
                 # Reconstruct test results
