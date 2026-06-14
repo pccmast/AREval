@@ -517,5 +517,85 @@ def config(
         console.print("[yellow]No changes. Use --api-key or --anthropic-key.[/yellow]")
 
 
+# ---------------------------------------------------------------------------
+# curate
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def curate(
+    traces_file: str = typer.Option(
+        ".areval/traces.json", "--traces", help="Trace file path (JSON array of spans)"
+    ),
+    output_name: str = typer.Option(
+        "auto-curated", "--name", "-n", help="Dataset name"
+    ),
+    max_cases: int = typer.Option(100, "--max", help="Maximum test cases to curate"),
+    min_score: float = typer.Option(0.3, "--min-score", help="Minimum value score"),
+) -> None:
+    """Curate a test dataset from production trace data.
+
+    Loads a JSON trace file, analyses each trace for evaluation value,
+    de-duplicates similar inputs, strips PII, and saves the resulting
+    test cases as a new dataset.
+    """
+    import json
+    from areval.datasets.curator import TraceCurator, CurationConfig
+    from areval.tracing.tracer import TraceSpan
+
+    console.print("[bold blue]AREval[/bold blue] — Trace Curation\n")
+
+    # Load trace data from JSON file
+    if not Path(traces_file).exists():
+        console.print(f"[red]Trace file not found: {traces_file}[/red]")
+        raise typer.Exit(code=1)
+
+    with open(traces_file) as f:
+        raw = json.load(f)
+
+    # Parse into TraceSpan objects
+    # Accept two formats: {"trace_id": [span_dicts]} or [{span_dict}]
+    traces: Dict[str, List[TraceSpan]] = {}
+    if isinstance(raw, dict):
+        for tid, spans_list in raw.items():
+            traces[tid] = []
+            for sd in spans_list:
+                span = TraceSpan(name=sd.get("name", ""), span_id=sd.get("span_id", ""))
+                span.trace_id = sd.get("trace_id")
+                span.start_time = sd.get("start_time", 0)
+                span.end_time = sd.get("end_time", 0)
+                span.status = sd.get("status", "ok")
+                span.attributes = sd.get("attributes", {})
+                traces[tid].append(span)
+    elif isinstance(raw, list):
+        # Flat list of spans — group by trace_id
+        for sd in raw:
+            span = TraceSpan(name=sd.get("name", ""), span_id=sd.get("span_id", ""))
+            span.trace_id = sd.get("trace_id", "unknown")
+            span.start_time = sd.get("start_time", 0)
+            span.end_time = sd.get("end_time", 0)
+            span.status = sd.get("status", "ok")
+            span.attributes = sd.get("attributes", {})
+            traces.setdefault(span.trace_id or "unknown", []).append(span)
+
+    console.print(f"Loaded {sum(len(v) for v in traces.values())} spans across {len(traces)} traces")
+
+    # Configure & curate
+    config = CurationConfig(min_value_score=min_score, max_cases=max_cases)
+    curator = TraceCurator(config=config)
+    dataset = curator.curate_from_traces(traces)
+
+    dm = DatasetManager()
+    dm.save_dataset(dataset)
+
+    console.print(f"\n[green]Dataset '{output_name}' curated: {dataset.size} test cases[/green]")
+    for tc in dataset.test_cases[:10]:
+        cat = tc.metadata.get("curation_category", "?")
+        score = tc.metadata.get("value_score", 0)
+        console.print(f"  [{cat}] (score={score:.2f}) {tc.input[:60]}...")
+    if dataset.size > 10:
+        console.print(f"  ... and {dataset.size - 10} more")
+
+
 if __name__ == "__main__":
     app()

@@ -151,6 +151,40 @@ class DatasetManager:
         with open(file_path, "w") as f:
             json.dump(dataset.to_dict(), f, indent=2, default=str)
 
+    def create_from_traces(
+        self,
+        tracer: "EvalTracer",
+        name: str,
+        description: str = "",
+        config: Optional[Any] = None,
+    ) -> Dataset:
+        """Curate a new dataset from production trace data.
+
+        Parameters
+        ----------
+        tracer : EvalTracer
+            A tracer instance that has collected trace spans.
+        name : str
+            Display name for the new dataset.
+        description : str
+        config : CurationConfig, optional
+
+        Returns
+        -------
+        Dataset
+            The newly created and persisted dataset.
+        """
+        from areval.datasets.curator import TraceCurator
+
+        curator = TraceCurator(config=config)
+        dataset = curator.curate_from_eval_tracer(tracer)
+        dataset.name = name
+        dataset.description = description
+        dataset.tags = list(set(dataset.tags + ["auto-curated"]))
+        self._datasets[dataset.id] = dataset
+        self._save(dataset)
+        return dataset
+
     def _load_all(self) -> None:
         """Load all datasets from storage."""
         if not self.storage_path.exists():

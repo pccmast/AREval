@@ -157,3 +157,15 @@ class EvalTracer:
             "unique_traces": traces,
             "avg_duration_ms": sum(s.duration_ms for s in self._spans) / total_spans if total_spans else 0,
         }
+
+    def get_all_traces(self) -> Dict[str, List[TraceSpan]]:
+        """Return all collected spans grouped by trace_id.
+
+        Used by :class:`~areval.datasets.curator.TraceCurator` to
+        analyse trace data and auto-curate test sets.
+        """
+        traces: Dict[str, List[TraceSpan]] = {}
+        for span in self._spans:
+            tid = span.trace_id or "unknown"
+            traces.setdefault(tid, []).append(span)
+        return traces
