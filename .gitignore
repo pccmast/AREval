@@ -11,6 +11,7 @@ downloads/
 eggs/
 .eggs/
 lib/
+!areval-dashboard/src/lib/
 lib64/
 parts/
 sdist/
@@ -38,8 +39,10 @@ ENV/
 
 # Dashboard
 node_modules/
-.areval-dashboard/.next/
-.areval-dashboard/dist/
+areval-dashboard/.next/
+areval-dashboard/dist/
+areval-dashboard/next-env.d.ts
+areval-dashboard/package-lock.json
 
 # Testing
 .pytest_cache/
