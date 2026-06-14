@@ -5,6 +5,6 @@ and AREval for end-to-end observability.
 """
 
 from areval.tracing.tracer import EvalTracer, TraceSpan
-from areval.tracing.exporters import ConsoleExporter, FileExporter
+from areval.tracing.exporters import ConsoleExporter, FileExporter, OTLPExporter
 
-__all__ = ["EvalTracer", "TraceSpan", "ConsoleExporter", "FileExporter"]
+__all__ = ["EvalTracer", "TraceSpan", "ConsoleExporter", "FileExporter", "OTLPExporter"]

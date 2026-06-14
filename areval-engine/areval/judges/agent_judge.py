@@ -119,29 +119,78 @@ def safe_calc(expression: str) -> str:
 _TOOL_REGISTRY: dict[str, Callable[[str], str]] = {}
 
 
-def _simulated_search(query: str) -> str:
-    """Simulated search tool.
+def _web_search(query: str) -> str:
+    """Search DuckDuckGo HTML (no API key required).
 
-    In production this would query a real search API (e.g. SerpAPI, Bing, Brave).
-    For the MVP it returns a placeholder so that the tool-execution path
-    is exercised without external network dependencies.
+    Returns up to 3 result snippets joined by newlines.  Falls back
+    gracefully to a placeholder when the network is unavailable.
+
+    Uses ``httpx`` which is already a project dependency.
     """
-    return f"[Simulated search results for: {query[:80]}...]"
+    try:
+        import httpx
+    except ImportError:
+        return f"[Search unavailable — httpx not installed.  Query: {query[:80]}]"
+
+    try:
+        resp = httpx.get(
+            "https://html.duckduckgo.com/html/",
+            params={"q": query},
+            timeout=10.0,
+            headers={"User-Agent": "AREval/0.1"},
+        )
+        resp.raise_for_status()
+    except Exception:
+        return f"[Search temporarily unavailable.  Query: {query[:80]}]"
+
+    snippets = re.findall(r'class="result__snippet"[^>]*>(.*?)<', resp.text)
+    return "\n".join(snippets[:3]) if snippets else f"[No results for: {query[:80]}]"
 
 
-def _simulated_code_executor(code: str) -> str:
-    """Simulated code-execution tool.
+def _subprocess_executor(code: str) -> str:
+    """Execute code in a sandboxed subprocess.
 
-    In production this would run code in a sandboxed environment (e.g. Docker
-    executor, E2B, or Modal).  For the MVP it returns a placeholder.
+    Runs Python code with a 5-second timeout in a restricted
+    subprocess.  Production deployments should upgrade to a container
+    sandbox (Docker / E2B).
     """
-    return f"[Code execution result (simulated) for: {code[:60]}...]"
+    import subprocess
+    import sys
+
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip() or "(no output)"
+        return f"Error (exit {result.returncode}): {result.stderr.strip()[:200]}"
+    except subprocess.TimeoutExpired:
+        return "Error: code execution timed out (5s)"
+    except Exception as e:
+        return f"Error: code execution failed ({e})"
 
 
 # Register built-in tools
 _TOOL_REGISTRY["calculator"] = safe_calc
-_TOOL_REGISTRY["search"] = _simulated_search
-_TOOL_REGISTRY["code_executor"] = _simulated_code_executor
+_TOOL_REGISTRY["search"] = _web_search
+_TOOL_REGISTRY["code_executor"] = _subprocess_executor
+
+
+def _format_verifications(verifications: List[Dict[str, Any]]) -> str:
+    """Format tool verification results for injection into an LLM rubric."""
+    if not verifications:
+        return "(no tool verifications performed)"
+    lines: list[str] = []
+    for v in verifications:
+        tool = v.get("tool", "unknown")
+        claim = v.get("claim", "")[:120]
+        result = v.get("result", "")
+        lines.append(f"- [{tool}] Claim: {claim}")
+        lines.append(f"  Result: {result}")
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -235,10 +284,14 @@ class AgentJudge(Judge):
                 if expr:
                     result = self._execute_tool("calculator", expr)
                     tool_used = "calculator"
-            elif any(kw in claim.lower() for kw in ["fact", "data", "number", "statistics"]):
-                if "search" in self.tools:
-                    result = self._execute_tool("search", claim)
-                    tool_used = "search"
+            elif len(claim) > 20 and "search" in self.tools:
+                # Any substantive claim is worth searching
+                result = self._execute_tool("search", claim)
+                tool_used = "search"
+            elif any(kw in claim.lower() for kw in ["code", "script", "function", "def ", "import", "run"]):
+                if "code_executor" in self.tools:
+                    result = self._execute_tool("code_executor", claim)
+                    tool_used = "code_executor"
 
             if result is not None:
                 verification_results.append({
@@ -295,36 +348,38 @@ class AgentJudge(Judge):
         agent_output: AgentOutput,
         verifications: List[Dict[str, Any]],
     ) -> float:
-        """Calculate overall quality score."""
-        scores: list[float] = []
+        """Calculate overall quality score via LLMJudge.
 
-        # Length heuristic
-        output_len = len(agent_output.output)
-        scores.append(min(1.0, output_len / 100))
+        When an LLM API key is available, a dedicated rubric incorporates
+        tool verification results into a 0–1 quality score.  Without a
+        key the judge degrades to its built-in heuristic mock.
+        """
+        from areval.judges.llm_judge import LLMJudge
 
-        # Expected output comparison (if available)
-        if test_case.expected_output:
-            expected_words = set(test_case.expected_output.lower().split())
-            actual_words = set(agent_output.output.lower().split())
-            overlap = len(expected_words & actual_words)
-            scores.append(overlap / max(len(expected_words), 1))
+        verification_text = _format_verifications(verifications)
 
-        # Verification results — real calculator successes boost score
-        if verifications:
-            success_count = 0
-            for v in verifications:
-                res = v.get("result", "")
-                if not res.startswith("Error:") and not res.startswith("[") and res.strip():
-                    success_count += 1
-            if success_count > 0:
-                scores.append(0.8 + 0.2 * (success_count / len(verifications)))
-            else:
-                scores.append(0.5)
-        elif agent_output.output and not self._is_math_claim(agent_output.output):
-            # Non-math output without verification is OK — use a neutral score
-            scores.append(0.6)
+        rubric = f"""You are the final quality judge in an Agent-as-a-Judge pipeline.
 
-        return sum(scores) / len(scores) if scores else 0.5
+Tool verification results (may be empty):
+{verification_text}
+
+Question:
+{{input}}
+
+Expected answer (may be empty):
+{{expected_output}}
+
+Agent answer:
+{{actual_output}}
+
+Assign a 0.0–1.0 score based on factual accuracy and completeness.
+Output ONLY:
+SCORE: <number>
+REASONING: <one sentence>
+"""
+        judge = LLMJudge(rubric=rubric, criteria=["quality"], model=self.model)
+        result = judge.evaluate(test_case, agent_output)
+        return max(0.0, min(1.0, result.score))
 
     def _generate_reasoning(
         self,
