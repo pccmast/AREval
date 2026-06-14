@@ -4,30 +4,31 @@ Usage:
     areval run --config eval.yaml --dataset tests.jsonl
     areval dashboard
     areval baseline create --run-id <id>
-    areval compare --current <id> --baseline <id>
+    areval compare --current <file> --baseline <id>
 """
 
 from __future__ import annotations
 
+import json
+import os
+import subprocess
+import sys
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 import typer
+import yaml
 from rich.console import Console
+from rich.panel import Panel
 from rich.table import Table
+from rich.text import Text
 
 from areval.evaluator import Evaluator
-from areval.metrics import (
-    ExactMatchMetric,
-    ContainsMetric,
-    SemanticSimilarityMetric,
-    FaithfulnessMetric,
-    AnswerRelevanceMetric,
-    ToolCallAccuracyMetric,
-)
-from areval.judges import LLMJudge
+from areval.metrics import get_metric
+from areval.judges import get_judge
 from areval.datasets import DatasetManager
 from areval.regression.baseline import BaselineManager
+from areval.test_case import TestCase, AgentOutput, EvaluationRun, TestResult, TestStatus
 
 app = typer.Typer(
     name="areval",
@@ -37,92 +38,282 @@ app = typer.Typer(
 console = Console()
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _load_results_json(path: str) -> Dict[str, Any]:
+    """Load a results JSON file previously saved by JSONReporter."""
+    with open(path) as f:
+        return json.load(f)
+
+
+def _reconstruct_run(data: Dict[str, Any]) -> EvaluationRun:
+    """Reconstruct an EvaluationRun from its serialized dict."""
+    results: list[TestResult] = []
+    for r_data in data.get("test_results", []):
+        tc_data = r_data["test_case"]
+        ao_data = r_data["agent_output"]
+        tc = TestCase.from_dict(tc_data)
+        ao = AgentOutput(
+            output=ao_data.get("output", ""),
+            tool_calls=ao_data.get("tool_calls", []),
+            latency_ms=ao_data.get("latency_ms", 0.0),
+            token_usage=ao_data.get("token_usage", {}),
+            cost_usd=ao_data.get("cost_usd", 0.0),
+            trace_id=ao_data.get("trace_id"),
+        )
+        tr = TestResult(
+            test_case=tc,
+            agent_output=ao,
+            status=TestStatus(r_data.get("status", "passed")),
+            scores=r_data.get("scores", {}),
+            overall_score=r_data.get("overall_score", 0.0),
+            threshold=r_data.get("threshold", 0.7),
+            error_message=r_data.get("error_message"),
+            judge_reasoning=r_data.get("judge_reasoning"),
+            execution_time_ms=r_data.get("execution_time_ms", 0.0),
+            baseline_score=r_data.get("baseline_score"),
+            regression_delta=r_data.get("regression_delta"),
+            is_regression=r_data.get("is_regression", False),
+        )
+        results.append(tr)
+
+    run = EvaluationRun(
+        name=data.get("name", "loaded"),
+        description=data.get("description", ""),
+        config=data.get("config", {}),
+    )
+    # Manually set results and re-compute aggregates
+    run.test_results = results
+    run.total_cases = data.get("total_cases", len(results))
+    run._compute_aggregates()
+    return run
+
+
+def _parse_yaml_config(config_path: str) -> Dict[str, Any]:
+    """Parse an eval_config.yaml and return a normalized config dict."""
+    with open(config_path) as f:
+        raw = yaml.safe_load(f)
+    return raw.get("evaluation", raw)
+
+
+# ---------------------------------------------------------------------------
+# run
+# ---------------------------------------------------------------------------
+
+
 @app.command()
 def run(
-    config: str = typer.Option("eval.yaml", "--config", "-c", help="Evaluation config file"),
-    dataset: str = typer.Option(..., "--dataset", "-d", help="Dataset file (JSONL)"),
-    output: str = typer.Option("results.json", "--output", "-o", help="Output file"),
-    metrics: list[str] = typer.Option(
-        ["exact_match", "semantic_similarity"],
-        "--metric",
-        "-m",
-        help="Metrics to use",
+    config: str = typer.Option(
+        "eval.yaml", "--config", "-c", help="Evaluation config file (YAML)"
     ),
-    threshold: float = typer.Option(0.7, "--threshold", "-t", help="Pass threshold"),
-    compare_baseline: bool = typer.Option(True, "--compare/--no-compare", help="Compare to baseline"),
+    dataset: str = typer.Option(
+        None, "--dataset", "-d", help="Dataset file (JSONL) — overrides config"
+    ),
+    output: str = typer.Option(
+        "results.json", "--output", "-o", help="Output results file"
+    ),
+    threshold: float = typer.Option(
+        None, "--threshold", "-t", help="Pass threshold — overrides config"
+    ),
 ) -> None:
-    """Run evaluation on a dataset."""
-    console.print("[bold blue]AREval[/bold blue] - Running Evaluation\n")
+    """Run a full evaluation pipeline.
 
-    # Load dataset
+    Reads eval_config.yaml (or --config) to determine datasets, metrics,
+    judges, and regression settings.  Outputs results.json and prints
+    a summary table.  Exits with code 1 if pass_rate < threshold.
+    """
+    console.print(Panel.fit("[bold blue]AREval[/bold blue] — Agent Regression Evaluation Harness"))
+
+    # ---- Resolve config ----
+    cfg: Dict[str, Any] = {}
+    if Path(config).exists():
+        cfg = _parse_yaml_config(config)
+        console.print(f"[dim]Config loaded from {config}[/dim]")
+
+    # ---- Dataset ----
+    ds_path = dataset or (cfg.get("dataset", {}) if isinstance(cfg.get("dataset"), str) else cfg.get("dataset", {}).get("path", ""))  # type: ignore[union-attr]
+    ds_format = (
+        cfg.get("dataset", {}) if isinstance(cfg.get("dataset"), dict) else {}
+    ).get("format", "jsonl")
+    if not ds_path:
+        console.print(
+            "[red]Error: No dataset specified (--dataset or config.evaluation.dataset.path)[/red]"
+        )
+        raise typer.Exit(code=2)
+
     dm = DatasetManager()
-    ds = dm.create_from_file(dataset, name="evaluation-run")
+    ds = dm.create_from_file(ds_path, name=Path(ds_path).stem, format=ds_format)
+    console.print(f"[dim]Dataset: {ds.name} ({ds.size} cases)[/dim]")
 
-    # Build evaluator
-    evaluator = Evaluator(threshold=threshold)
+    # ---- Threshold ----
+    thresh = threshold if threshold is not None else cfg.get("threshold", 0.7)
 
-    metric_map = {
-        "exact_match": ExactMatchMetric(),
-        "contains": ContainsMetric(),
-        "semantic_similarity": SemanticSimilarityMetric(),
-        "faithfulness": FaithfulnessMetric(),
-        "answer_relevance": AnswerRelevanceMetric(),
-        "tool_call_accuracy": ToolCallAccuracyMetric(),
-    }
+    # ---- Build evaluator ----
+    evaluator = Evaluator(threshold=thresh)
 
-    for m in metrics:
-        if m in metric_map:
-            evaluator.add_metric(metric_map[m])
-        else:
-            console.print(f"[yellow]Warning: Unknown metric '{m}'[/yellow]")
+    # Metrics (from config or fallback CLI defaults)
+    metric_entries: list[dict[str, Any]] = cfg.get("metrics", [])
+    if not metric_entries:
+        # Fallback: exact_match + semantic_similarity
+        metric_entries = [{"name": "exact_match"}, {"name": "semantic_similarity"}]
 
-    # Run evaluation
+    for entry in metric_entries:
+        name = entry["name"]
+        m_threshold = entry.get("threshold", thresh)
+        m_config = entry.get("config", {})
+        try:
+            metric = get_metric(name, threshold=m_threshold, **m_config)
+            evaluator.add_metric(metric)
+            console.print(f"  [green]+[/green] metric: {name}")
+        except KeyError:
+            console.print(f"  [yellow]?[/yellow] unknown metric '{name}', skipped")
+
+    # Judges (optional, from config)
+    judge_entries: list[dict[str, Any]] = cfg.get("judges", [])
+    for entry in judge_entries:
+        name = entry["name"]
+        j_threshold = entry.get("threshold", thresh)
+        j_config = entry.get("config", {})
+        try:
+            judge = get_judge(name, threshold=j_threshold, **j_config)
+            evaluator.add_judge(judge)
+            console.print(f"  [green]+[/green] judge: {name}")
+        except KeyError:
+            console.print(f"  [yellow]?[/yellow] unknown judge '{name}', skipped")
+
+    # ---- Regression config ----
+    reg_cfg = cfg.get("regression", {})
+    compare_baseline = reg_cfg.get("compare_baseline", True)
+
+    console.print()
+
+    # ---- Agent function ----
+    # When no real agent is wired, use an echo agent (repeat input)
+    def _echo_agent(tc: TestCase) -> AgentOutput:
+        return AgentOutput(
+            output=tc.input[:100],
+            latency_ms=50.0,
+            token_usage={"input": len(tc.input.split()), "output": 10},
+        )
+
+    # ---- Run evaluation ----
     eval_run = evaluator.evaluate(
         test_cases=ds.test_cases,
-        agent_fn=None,  # Would be provided in real usage
-        run_name="cli-evaluation",
+        agent_fn=_echo_agent,
+        run_name=cfg.get("name", "cli-evaluation"),
+        run_description=cfg.get("description", ""),
+        config=cfg,
         compare_baseline=compare_baseline,
     )
 
-    # Display results
+    # ---- Display summary ----
     console.print(evaluator.summary(eval_run))
 
-    # Save results
+    # ---- Export ----
     from areval_sdk.reporters import JSONReporter
-    reporter = JSONReporter(eval_run)
-    reporter.export(output)
+
+    JSONReporter(eval_run).export(output)
     console.print(f"\n[green]Results saved to {output}[/green]")
 
-    # Exit with error code if failed
-    if eval_run.pass_rate < threshold:
+    # ---- Auto-baseline ----
+    if reg_cfg.get("auto_baseline", False):
+        bid = evaluator.create_baseline(eval_run, name=cfg.get("name", "auto-baseline"))
+        console.print(f"[green]Auto-baseline created: {bid}[/green]")
+
+    # ---- Exit code ----
+    if eval_run.pass_rate < thresh:
+        console.print(f"\n[red]FAILED: pass_rate {eval_run.pass_rate:.1%} < threshold {thresh:.1%}[/red]")
         raise typer.Exit(code=1)
+
+
+# ---------------------------------------------------------------------------
+# dashboard
+# ---------------------------------------------------------------------------
 
 
 @app.command()
 def dashboard(
-    port: int = typer.Option(3000, "--port", "-p", help="Dashboard port"),
+    port: int = typer.Option(3000, "--port", "-p", help="Dashboard HTTP port"),
     host: str = typer.Option("127.0.0.1", "--host", "-h", help="Dashboard host"),
 ) -> None:
-    """Launch the evaluation dashboard."""
+    """Launch the evaluation dashboard (Next.js dev server).
+
+    Requires Node.js and npm to be available.  The dashboard source lives in
+    the ``areval-dashboard/`` directory alongside the project root.
+
+    If the dashboard directory or npm is not found, prints clear setup
+    instructions instead of failing silently.
+    """
+    dash_dir = Path(__file__).resolve().parents[2] / "areval-dashboard"
+
+    if not dash_dir.is_dir():
+        console.print("[yellow]Dashboard directory not found.[/yellow]")
+        console.print(f"Expected: {dash_dir}")
+        console.print("Dashboard is a Next.js app.  See areval-dashboard/README.md for setup.")
+        return
+
+    pkg_json = dash_dir / "package.json"
+    if not pkg_json.exists():
+        console.print("[yellow]areval-dashboard/package.json not found.[/yellow]")
+        console.print("Run:  cd areval-dashboard && npm install && npm run dev")
+        return
+
     console.print(f"[bold blue]Starting dashboard on http://{host}:{port}[/bold blue]")
-    console.print("[yellow]Dashboard is served from areval-dashboard/[/yellow]")
-    # In production: launch Next.js dev server or serve built files
+
+    try:
+        subprocess.run(
+            ["npm", "run", "dev", "--", "--port", str(port), "--hostname", host],
+            cwd=str(dash_dir),
+            check=False,
+        )
+    except FileNotFoundError:
+        console.print("[yellow]npm not found.  Please install Node.js and npm.[/yellow]")
+        console.print(f"Then run:  cd {dash_dir} && npm install && npm run dev")
+
+
+# ---------------------------------------------------------------------------
+# baseline
+# ---------------------------------------------------------------------------
 
 
 @app.command()
 def baseline(
     action: str = typer.Argument(..., help="create, list, or delete"),
-    run_id: Optional[str] = typer.Option(None, "--run-id", help="Run ID to baseline"),
-    baseline_id: Optional[str] = typer.Option(None, "--baseline-id", help="Baseline ID"),
+    run_id: Optional[str] = typer.Option(
+        None, "--run-id", help="Run ID (for create)"
+    ),
+    results_file: Optional[str] = typer.Option(
+        None, "--results", "-r", help="Results JSON file (for create, alternative to --run-id)"
+    ),
+    baseline_id: Optional[str] = typer.Option(
+        None, "--baseline-id", help="Baseline ID (for delete)"
+    ),
+    name: Optional[str] = typer.Option(
+        None, "--name", "-n", help="Baseline display name (for create)"
+    ),
+    tag: Optional[List[str]] = typer.Option(
+        None, "--tag", help="Tags for the baseline (for create)"
+    ),
 ) -> None:
-    """Manage evaluation baselines."""
+    """Manage evaluation baselines.
+
+    Create a baseline from an evaluation run or saved results file,
+    list all baselines, or delete one by ID.
+    """
     bm = BaselineManager()
 
     if action == "list":
         baselines = bm.list_baselines()
-        table = Table(title="Baselines")
-        table.add_column("ID", style="cyan")
+        if not baselines:
+            console.print("[dim]No baselines found.[/dim]")
+            return
+
+        table = Table(title="Baselines", expand=False)
+        table.add_column("ID", style="cyan", no_wrap=True)
         table.add_column("Name", style="green")
+        table.add_column("Run ID", style="dim")
         table.add_column("Created", style="yellow")
         table.add_column("Tags", style="magenta")
 
@@ -130,48 +321,200 @@ def baseline(
             table.add_row(
                 b.id,
                 b.name,
+                b.run_id or "—",
                 b.created_at.strftime("%Y-%m-%d %H:%M"),
-                ", ".join(b.tags),
+                ", ".join(b.tags) if b.tags else "—",
             )
         console.print(table)
+        return
 
-    elif action == "delete" and baseline_id:
+    if action == "create":
+        if results_file:
+            if not Path(results_file).exists():
+                console.print(f"[red]Results file not found: {results_file}[/red]")
+                raise typer.Exit(code=1)
+            data = _load_results_json(results_file)
+            run = _reconstruct_run(data)
+            baseline_obj = bm.create_baseline(
+                run=run,
+                name=name or f"Baseline from {Path(results_file).stem}",
+                tags=list(tag) if tag else ["cli"],
+            )
+            console.print(f"[green]Baseline created: {baseline_obj.id}[/green]")
+            console.print(f"  Name: {baseline_obj.name}")
+            console.print(f"  Cases: {len(run.test_results)}")
+            console.print(f"  Avg score: {run.avg_score:.3f}")
+            return
+
+        if run_id:
+            # Try to find a saved run JSON with this ID
+            results_dir = Path(".areval/results")
+            if results_dir.exists():
+                for f in results_dir.glob("*.json"):
+                    try:
+                        data = _load_results_json(str(f))
+                        if data.get("id") == run_id:
+                            run = _reconstruct_run(data)
+                            baseline_obj = bm.create_baseline(
+                                run=run,
+                                name=name or f"Baseline {run_id[:8]}",
+                                tags=list(tag) if tag else ["cli"],
+                            )
+                            console.print(f"[green]Baseline created from run {run_id}: {baseline_obj.id}[/green]")
+                            return
+                    except (json.JSONDecodeError, KeyError):
+                        continue
+
+            console.print(f"[red]Run {run_id} not found.  Use --results to load from a JSON file.[/red]")
+            raise typer.Exit(code=1)
+
+        console.print(
+            "[red]Provide --run-id or --results to create a baseline.[/red]"
+        )
+        raise typer.Exit(code=2)
+
+    if action == "delete" and baseline_id:
         if bm.delete_baseline(baseline_id):
             console.print(f"[green]Deleted baseline {baseline_id}[/green]")
         else:
             console.print(f"[red]Baseline {baseline_id} not found[/red]")
+            raise typer.Exit(code=1)
+        return
 
-    else:
-        console.print(f"[red]Unknown action: {action}[/red]")
+    if action == "delete":
+        console.print("[red]Use --baseline-id to specify which baseline to delete.[/red]")
+        raise typer.Exit(code=2)
+
+    console.print(f"[red]Unknown action: {action}[/red]")
+    console.print("Available actions: create, list, delete")
+    raise typer.Exit(code=2)
+
+
+# ---------------------------------------------------------------------------
+# compare
+# ---------------------------------------------------------------------------
 
 
 @app.command()
 def compare(
-    current: str = typer.Option(..., "--current", "-c", help="Current run ID"),
-    baseline_id: str = typer.Option(..., "--baseline", "-b", help="Baseline ID"),
+    current: str = typer.Option(
+        ..., "--current", "-c", help="Current results JSON file"
+    ),
+    baseline_id: str = typer.Option(
+        ..., "--baseline", "-b", help="Baseline ID to compare against"
+    ),
 ) -> None:
-    """Compare current results against a baseline."""
+    """Compare current evaluation results against a saved baseline.
+
+    Loads results from a JSON file (saved by ``areval run`` or the API)
+    and compares each test case against the specified baseline.
+
+    Displays a Rich table with per-case deltas and highlights regressions.
+    """
+    # Load current results
+    if not Path(current).exists():
+        console.print(f"[red]Results file not found: {current}[/red]")
+        raise typer.Exit(code=1)
+
+    current_data = _load_results_json(current)
+    current_run = _reconstruct_run(current_data)
+
+    # Load baseline
     bm = BaselineManager()
-    # Load and compare
-    console.print(f"[blue]Comparing {current} against {baseline_id}...[/blue]")
+    comp = bm.compare_to_baseline(current_run.test_results, baseline_id)
+
+    if "error" in comp:
+        console.print(f"[red]{comp['error']}[/red]")
+        raise typer.Exit(code=1)
+
+    console.print(
+        Panel.fit(
+            f"[bold]Current:[/bold] {current_run.name}  |  [bold]Baseline:[/bold] {comp['baseline_name']}",
+            title="Comparison",
+        )
+    )
+
+    comparisons: list[dict[str, Any]] = comp["comparisons"]
+    if not comparisons:
+        console.print("[dim]No common test cases found between current and baseline.[/dim]")
+        return
+
+    # --- Per-case table ---
+    table = Table(title="Test Case Deltas", expand=False)
+    table.add_column("Test", style="cyan")
+    table.add_column("Baseline", justify="right")
+    table.add_column("Current", justify="right")
+    table.add_column("Delta", justify="right")
+    table.add_column("Status", justify="center")
+
+    regressed = 0
+    for c in comparisons:
+        delta = c["delta"]
+        is_reg = c["regressed"]
+        if is_reg:
+            regressed += 1
+
+        delta_style = f"[red]{delta:+.3f}[/red]" if is_reg else f"[dim]{delta:+.3f}[/dim]"
+        status = "[red]FAIL[/red]" if is_reg else "[green]PASS[/green]"
+
+        table.add_row(
+            c.get("test_name", c.get("test_id", "?")),
+            f"{c['baseline_score']:.3f}",
+            f"{c['current_score']:.3f}",
+            delta_style,
+            status,
+        )
+
+    console.print(table)
+
+    # --- Summary ---
+    console.print()
+    summary_text = Text()
+    summary_text.append(f"Average delta: {comp['avg_delta']:+.4f}  ", style="bold")
+    if regressed:
+        summary_text.append(
+            f"Regressed cases: {regressed}/{len(comparisons)}", style="red"
+        )
+    else:
+        summary_text.append("No regressions detected", style="green")
+    console.print(summary_text)
+
+    if regressed:
+        raise typer.Exit(code=1)
+
+
+# ---------------------------------------------------------------------------
+# config
+# ---------------------------------------------------------------------------
 
 
 @app.command()
 def config(
     api_key: Optional[str] = typer.Option(None, "--api-key", help="OpenAI API key"),
+    anthropic_key: Optional[str] = typer.Option(None, "--anthropic-key", help="Anthropic API key"),
 ) -> None:
-    """Configure AREval settings."""
+    """Configure AREval settings (API keys, etc.)."""
     config_dir = Path.home() / ".areval"
     config_dir.mkdir(exist_ok=True)
     config_file = config_dir / "config.yaml"
 
+    # Load existing config
+    existing: Dict[str, str] = {}
+    if config_file.exists():
+        with open(config_file) as f:
+            existing = yaml.safe_load(f) or {}
+
     if api_key:
-        import yaml
+        existing["openai_api_key"] = api_key
+    if anthropic_key:
+        existing["anthropic_api_key"] = anthropic_key
+
+    if api_key or anthropic_key:
         with open(config_file, "w") as f:
-            yaml.dump({"openai_api_key": api_key}, f)
-        console.print("[green]Configuration saved[/green]")
+            yaml.dump(existing, f)
+        console.print("[green]Configuration saved to ~/.areval/config.yaml[/green]")
     else:
-        console.print("[yellow]No changes made. Use --api-key to set API key.[/yellow]")
+        console.print("[yellow]No changes. Use --api-key or --anthropic-key.[/yellow]")
 
 
 if __name__ == "__main__":
