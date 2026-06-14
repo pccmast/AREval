@@ -11,7 +11,7 @@ import json
 import threading
 import warnings
 from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -105,7 +105,7 @@ class TimeSeriesStorage:
     def get_stats(self, window_minutes: int = 60) -> Dict[str, Any]:
         """Aggregate stats for the last *window_minutes*."""
         cutoff = datetime.now(timezone.utc).replace(second=0, microsecond=0)
-        start = cutoff - __import__("datetime").timedelta(minutes=window_minutes)
+        start = cutoff - timedelta(minutes=window_minutes)
         recent = self.query(start=start)
 
         total = len(recent)
@@ -126,10 +126,21 @@ class TimeSeriesStorage:
         self,
         window_minutes: int = 1440,
         bucket_minutes: int = 60,
+        threshold: float = 0.7,
     ) -> List[Dict[str, Any]]:
-        """Return bucketed time-series trend data."""
+        """Return bucketed time-series trend data.
+
+        Parameters
+        ----------
+        window_minutes : int
+            Total time window to cover.
+        bucket_minutes : int
+            Size of each bucket (must be > 0).
+        threshold : float
+            Pass/fail threshold used to compute ``pass_rate`` per bucket.
+        """
         cutoff = datetime.now(timezone.utc).replace(second=0, microsecond=0)
-        start = cutoff - __import__("datetime").timedelta(minutes=window_minutes)
+        start = cutoff - timedelta(minutes=window_minutes)
         results = self.query(start=start)
 
         # Build empty buckets
@@ -137,7 +148,7 @@ class TimeSeriesStorage:
         t = start
         while t <= cutoff:
             buckets[t.isoformat()] = []
-            t += __import__("datetime").timedelta(minutes=bucket_minutes)
+            t += timedelta(minutes=bucket_minutes)
             if bucket_minutes <= 0:
                 break
 
@@ -145,7 +156,7 @@ class TimeSeriesStorage:
         for r in results:
             ts = r.timestamp.replace(second=0, microsecond=0)
             # Find the bucket start
-            bucket_start = ts - __import__("datetime").timedelta(
+            bucket_start = ts - timedelta(
                 minutes=ts.minute % bucket_minutes
             )
             key = bucket_start.isoformat()
@@ -156,7 +167,9 @@ class TimeSeriesStorage:
             {
                 "timestamp": ts,
                 "avg_score": sum(scores) / len(scores) if scores else 0.0,
-                "pass_rate": 0.0,
+                "pass_rate": sum(1 for s in scores if s >= threshold) / len(scores)
+                if scores
+                else 0.0,
                 "count": len(scores),
             }
             for ts, scores in buckets.items()

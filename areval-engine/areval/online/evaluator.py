@@ -23,6 +23,7 @@ capacity.
 from __future__ import annotations
 
 import hashlib
+import logging
 import queue
 import threading
 import time
@@ -35,6 +36,8 @@ from areval.judges.base import Judge
 from areval.online.storage import TimeSeriesStorage, OnlineResult
 from areval.online.monitors import QualityMonitor
 from areval.test_case import TestCase, AgentOutput
+
+logger = logging.getLogger(__name__)
 
 
 class OnlineEvaluator:
@@ -123,7 +126,11 @@ class OnlineEvaluator:
         return self.storage.get_stats(window_minutes=window_minutes)
 
     def get_trend(self, window_minutes: int = 1440, bucket_minutes: int = 60) -> List[Dict[str, Any]]:
-        return self.storage.get_trend(window_minutes=window_minutes, bucket_minutes=bucket_minutes)
+        return self.storage.get_trend(
+            window_minutes=window_minutes,
+            bucket_minutes=bucket_minutes,
+            threshold=self.threshold,
+        )
 
     def get_health(self) -> Dict[str, Any]:
         return self.monitor.get_health_status()
@@ -160,7 +167,10 @@ class OnlineEvaluator:
                     self.storage.append(result)
                     self.monitor.check()
             except Exception:
-                pass
+                logger.exception(
+                    "OnlineEvaluator worker: unhandled error evaluating task "
+                    "(test_case=%r)", getattr(tc, 'name', 'unknown'),
+                )
             finally:
                 self._queue.task_done()
 

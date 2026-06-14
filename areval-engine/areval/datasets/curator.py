@@ -188,14 +188,55 @@ class TraceCurator:
     # ------------------------------------------------------------------
 
     def _strip_pii(self, text: str) -> str:
-        """Remove common PII patterns from *text*."""
+        """Remove common PII patterns from *text*.
+
+        Covers both English and Chinese PII so that automatically curated
+        test sets do not leak personal data into regression baselines.
+        """
+        # ── English / international ──────────────────────────────
         # Email
         text = re.sub(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", "[EMAIL]", text)
-        # Phone (Chinese / international)
-        text = re.sub(r"1[3-9]\d{9}", "[PHONE]", text)
+        # International phone
         text = re.sub(r"\+\d{1,3}[\s-]?\d{4,14}", "[PHONE]", text)
-        # ID card  (18-digit Chinese)
+
+        # ── Chinese ──────────────────────────────────────────────
+        # Mobile phone (11 digits starting with 1)
+        text = re.sub(r"1[3-9]\d{9}", "[PHONE]", text)
+        # Landline with area code  (0XXX-XXXXXXXX or 0XXX XXXXXXXX)
+        text = re.sub(r"0\d{2,3}[- ]?\d{7,8}", "[PHONE]", text)
+        # ID card — 18-digit (last digit may be X)
         text = re.sub(r"\b\d{17}[\dXx]\b", "[ID_CARD]", text)
+        # ID card — legacy 15-digit
+        text = re.sub(r"\b\d{15}\b", "[ID_CARD]", text)
+        # Chinese name — surname (1-2 chars) + given name (1-2 chars)
+        # Common surnames (百家姓 top ~120) grouped for efficiency
+        _CN_SURNAME = (
+            r"[王李张刘陈杨黄赵周吴徐孙马胡朱郭何罗高林郑梁谢唐许"
+            r"冯宋韩邓彭曹曾田萧潘袁蔡蒋余于杜叶程苏魏吕丁任卢姚"
+            r"沈钟姜崔谭陆范汪廖石金韦贾夏付方白邹孟熊秦邱江尹薛"
+            r"闫段雷侯龙史陶黎贺顾毛郝龚邵万钱严覃武戴莫孔向汤"
+            r"温康施文牛樊葛邢安齐易乔伍庞颜倪庄聂章鲁岳翟殷詹"
+            r"申欧耿关兰芦俞]"
+        )
+        # Name pattern: surname + 1-2 chars (Chinese character range)
+        _cn_name_re = (
+            _CN_SURNAME
+            + r"[\u4e00-\u9fff]{1,2}(?=[\s，。！？、；：""''）】》\\]])"
+        )
+        text = re.sub(_cn_name_re, "[NAME]", text)
+        # Address — province/city prefix + road/street/lane + number
+        text = re.sub(
+            r"(?:[\u4e00-\u9fff]{2,}(?:省|市|区|县|镇|乡|村|街道|路|巷|弄|号|楼|室|单元|栋)\s*)+\d*",
+            "[ADDRESS]",
+            text,
+        )
+        # QQ number (5-11 digits)
+        text = re.sub(r"\b[1-9]\d{4,10}\b", "[QQ]", text)
+        # WeChat ID (字母数字下划线减号组合)
+        text = re.sub(r"(?i)(?:weixin|wechat|wx|微信)[:：]?\s*[a-zA-Z][a-zA-Z0-9_-]{5,19}", "[WECHAT]", text)
+        # Bank card number (16 or 19 digits)
+        text = re.sub(r"\b\d{16}\b", "[BANK_CARD]", text)
+        text = re.sub(r"\b\d{19}\b", "[BANK_CARD]", text)
         return text
 
     # ------------------------------------------------------------------

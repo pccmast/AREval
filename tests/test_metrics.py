@@ -11,7 +11,7 @@ from areval.metrics.semantic import (
     OfflineEmbeddingProvider,
     OpenAIEmbeddingProvider,
 )
-from areval.metrics.rag import FaithfulnessMetric, AnswerRelevanceMetric
+from areval.metrics.rag import FaithfulnessMetric, AnswerRelevanceMetric, ContextPrecisionMetric
 from areval.metrics.agent import ToolCallAccuracyMetric, TaskCompletionMetric
 
 
@@ -77,6 +77,45 @@ class TestFaithfulnessMetric:
         metric = FaithfulnessMetric()
         tc = TestCase(input="What is Python?")
         ao = AgentOutput(output="Python is a programming language.")
+        result = metric.measure(tc, ao)
+        assert result.score == 0.0
+
+
+class TestAnswerRelevanceMetric:
+    def test_relevant_answer(self):
+        from areval.metrics.rag import AnswerRelevanceMetric
+        metric = AnswerRelevanceMetric()
+        tc = TestCase(
+            name="relevant",
+            input="What is the speed of light?",
+            expected_output="The speed of light is approximately 300,000 km/s.",
+        )
+        ao = AgentOutput(output="The speed of light is about 300,000 km/s.")
+        result = metric.measure(tc, ao)
+        # Heuristic mock should give a reasonable score for overlapping content
+        assert 0.0 <= result.score <= 1.0
+        assert result.name == "answer_relevance"
+
+
+class TestContextPrecisionMetric:
+    def test_relevant_context(self):
+        from areval.metrics.rag import ContextPrecisionMetric
+        metric = ContextPrecisionMetric()
+        tc = TestCase(
+            name="precise-context",
+            input="Who created Python?",
+            context="Python was created by Guido van Rossum in 1991. It is named after Monty Python.",
+        )
+        ao = AgentOutput(output="Guido van Rossum")
+        result = metric.measure(tc, ao)
+        assert 0.0 <= result.score <= 1.0
+        assert result.name == "context_precision"
+
+    def test_no_context(self):
+        from areval.metrics.rag import ContextPrecisionMetric
+        metric = ContextPrecisionMetric()
+        tc = TestCase(name="no-ctx", input="Some question")
+        ao = AgentOutput(output="Some answer")
         result = metric.measure(tc, ao)
         assert result.score == 0.0
 
