@@ -34,6 +34,7 @@ from areval.online.storage import TimeSeriesStorage
 from areval.online.monitors import QualityMonitor, AlertConfig
 from areval.test_case import TestCase as TCase, AgentOutput as AOutput
 from areval.utils.serialization import reconstruct_run
+from areval.storage import JsonFileStore, SqliteStore
 
 app = FastAPI(
     title="AREval API",
@@ -57,35 +58,12 @@ app.add_middleware(
 dataset_manager = DatasetManager()
 baseline_manager = BaselineManager()
 
-# JSON file-backed evaluation run storage
-_EVAL_RUNS_DIR = Path(os.environ.get("AREVAL_RUNS_DIR", ".areval/runs"))
-_EVAL_RUNS_DIR.mkdir(parents=True, exist_ok=True)
-_eval_runs: Dict[str, EvaluationRun] = {}
-
-
-def _save_run(run: EvaluationRun) -> None:
-    """Persist an evaluation run to a JSON file."""
-    file_path = _EVAL_RUNS_DIR / f"{run.id}.json"
-    with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(run.to_dict(), f, indent=2, default=str)
-
-
-def _load_all_runs() -> None:
-    """Load all persisted evaluation runs from disk."""
-    if not _EVAL_RUNS_DIR.exists():
-        return
-    for file_path in _EVAL_RUNS_DIR.glob("*.json"):
-        try:
-            with open(file_path, encoding="utf-8") as f:
-                data = json.load(f)
-            run = reconstruct_run(data)
-            _eval_runs[run.id] = run
-        except (json.JSONDecodeError, KeyError):
-            continue
-
-
-# Load existing runs on startup
-_load_all_runs()
+# Pluggable evaluation run storage
+_store_type = os.environ.get("AREVAL_STORE", "json").lower()
+if _store_type == "sqlite":
+    _store = SqliteStore(db_path=os.environ.get("AREVAL_DB_PATH", ".areval/evaluations.db"))
+else:
+    _store = JsonFileStore(directory=os.environ.get("AREVAL_RUNS_DIR", ".areval/runs"))
 
 # Online evaluation instance (singleton for the API process)
 _online_storage = TimeSeriesStorage()
@@ -275,8 +253,7 @@ async def create_evaluation(body: CreateEvaluationRequest) -> Dict[str, Any]:
         run_name=f"api-evaluation-{dataset.name}",
     )
 
-    _eval_runs[eval_run.id] = eval_run
-    _save_run(eval_run)
+    _store.save(eval_run)
 
     return {
         "run_id": eval_run.id,
@@ -294,6 +271,7 @@ async def create_evaluation(body: CreateEvaluationRequest) -> Dict[str, Any]:
 @app.get("/api/v1/evaluations")
 async def list_evaluations() -> List[Dict[str, Any]]:
     """List all evaluation runs."""
+    runs = _store.list()
     return [
         {
             "id": r.id,
@@ -304,14 +282,14 @@ async def list_evaluations() -> List[Dict[str, Any]]:
             "regression_count": r.regression_count,
             "started_at": r.started_at.isoformat(),
         }
-        for r in sorted(_eval_runs.values(), key=lambda x: x.started_at, reverse=True)
+        for r in runs
     ]
 
 
 @app.get("/api/v1/evaluations/{run_id}")
 async def get_evaluation(run_id: str) -> Dict[str, Any]:
     """Get evaluation run details."""
-    run = _eval_runs.get(run_id)
+    run = _store.get(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Evaluation run not found")
     return run.to_dict()
@@ -320,7 +298,7 @@ async def get_evaluation(run_id: str) -> Dict[str, Any]:
 @app.get("/api/v1/evaluations/{run_id}/results")
 async def get_evaluation_results(run_id: str) -> List[Dict[str, Any]]:
     """Get detailed test results for a run."""
-    run = _eval_runs.get(run_id)
+    run = _store.get(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Evaluation run not found")
     return [r.to_dict() for r in run.test_results]
@@ -360,9 +338,10 @@ async def list_available_metrics() -> List[Dict[str, str]]:
 @app.get("/api/v1/stats")
 async def get_stats() -> Dict[str, Any]:
     """Get overall statistics."""
-    runs = list(_eval_runs.values())
+    runs = _store.list()
+    total_runs = _store.count()
     return {
-        "total_evaluations": len(runs),
+        "total_evaluations": total_runs,
         "total_test_cases": sum(r.total_cases for r in runs),
         "average_pass_rate": sum(r.pass_rate for r in runs) / len(runs) if runs else 0,
         "total_regressions": sum(r.regression_count for r in runs),
