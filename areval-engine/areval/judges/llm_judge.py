@@ -76,44 +76,47 @@ REASONING: <your detailed reasoning>
         return None
 
     def _mock_response(
-        self, expected_output: str, actual_output: str
+        self,
+        expected_output: str = "",
+        actual_output: str = "",
+        context: str = "",
+        **kwargs: Any,  # accept extra rubric fields silently
     ) -> str:
         """Heuristic simulated LLM response for offline/CI usage.
 
         Produces a distinguishable score based on token-level overlap
-        between expected and actual outputs, rather than a fixed
-        constant.  This allows the mock judge to differentiate between
-        good and poor responses even without a real LLM.
+        between a *reference text* and the actual output.
 
-        The heuristic:
-        - Splits both texts into lower-cased word tokens
-        - Computes Jaccard similarity on the token sets
-        - Scales to a 0.3–0.95 range with a mild length penalty
+        Reference precedence:
+        1. ``context``     – used by RAG metrics (faithfulness / precision)
+        2. ``expected_output`` – used by most other metrics
+        3. If neither is non-empty, returns a neutral 0.50.
         """
-        if not expected_output or not actual_output:
-            # No basis for comparison
+        ref_text = context or expected_output
+
+        if not ref_text or not actual_output:
             return """
 SCORE: 0.50
 CORRECTNESS: 3
 COMPLETENESS: 2
 CLARITY: 3
 HELPFULNESS: 2
-REASONING: Unable to compute heuristic — missing expected or actual output.
+REASONING: Unable to compute heuristic — missing reference or actual output.
 """
 
-        exp_tokens = set(expected_output.lower().split())
+        ref_tokens = set(ref_text.lower().split())
         act_tokens = set(actual_output.lower().split())
 
-        if not exp_tokens or not act_tokens:
+        if not ref_tokens or not act_tokens:
             overlap = 0.0
         else:
-            overlap = len(exp_tokens & act_tokens) / len(exp_tokens | act_tokens)
+            overlap = len(ref_tokens & act_tokens) / len(ref_tokens | act_tokens)
 
         # Map Jaccard [0, 1] → score [0.30, 0.95]
         score = 0.30 + overlap * 0.65
 
         # Mild length penalty: reward responses within 50%–200% of expected length
-        len_ratio = len(actual_output) / max(len(expected_output), 1)
+        len_ratio = len(actual_output) / max(len(ref_text), 1)
         if len_ratio < 0.5 or len_ratio > 2.0:
             score = max(0.25, score - 0.10)
 
@@ -171,20 +174,19 @@ REASONING: Heuristic evaluation — token overlap={overlap:.2f}, length_ratio={l
             return getattr(response.content[0], "text", "")
         return ""
 
-    def _call_llm(
-        self,
-        prompt: str,
-        expected_output: str = "",
-        actual_output: str = "",
-    ) -> str:
+    def _call_llm(self, prompt: str, **format_kwargs: Any) -> str:
         """Call the LLM with the evaluation prompt.
 
         Falls back to the mock response when:
         - provider is explicitly "mock"
         - no API key is configured and provider is openai/anthropic
+
+        ``format_kwargs`` is forwarded to :meth:`_mock_response` so that
+        the heuristic can pick the best reference text (e.g. ``{context}``
+        for RAG metrics, ``{expected_output}`` otherwise).
         """
         if self.provider == "mock":
-            return self._mock_response(expected_output, actual_output)
+            return self._mock_response(**format_kwargs)
 
         api_key = self.api_key or self._api_key_from_env()
         if not api_key:
@@ -192,7 +194,7 @@ REASONING: Heuristic evaluation — token overlap={overlap:.2f}, length_ratio={l
                 f"[LLMJudge] Warning: no API key found for provider={self.provider!r}. "
                 "Falling back to heuristic mock response."
             )
-            return self._mock_response(expected_output, actual_output)
+            return self._mock_response(**format_kwargs)
 
         if self.provider == "openai":
             return self._call_openai(prompt, api_key)
@@ -256,7 +258,7 @@ REASONING: Heuristic evaluation — token overlap={overlap:.2f}, length_ratio={l
         format_kwargs.update(extra_format_kwargs)
         prompt = self.rubric.format(**format_kwargs)
 
-        response = self._call_llm(prompt, expected, actual)
+        response = self._call_llm(prompt, **format_kwargs)
         parsed = self._parse_response(response)
 
         return JudgeResult(
