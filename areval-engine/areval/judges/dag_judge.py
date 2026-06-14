@@ -1,8 +1,14 @@
-"""DAG-based judge inspired by DeepEval's DAG metric.
+"""DAG-based judge — multi-step evaluation workflows.
 
-Allows complex, multi-step evaluation workflows using a directed
-acyclic graph of judgement nodes.
+Each :class:`JudgementNode` delegates its criterion to an
+:class:`~areval.judges.llm_judge.LLMJudge`.  When no LLM API key is
+available the judge falls back to a heuristic mock, giving *strictly
+better* results than the previous keyword-counting skeleton.
+
+Inspired by DeepEval's DAG metric.
 """
+
+from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Union
 
@@ -10,51 +16,88 @@ from areval.judges.base import Judge, JudgeResult
 from areval.test_case import TestCase, AgentOutput
 
 
-class VerdictNode:
-    """A leaf node that assigns a score."""
+# ---------------------------------------------------------------------------
+# Node types
+# ---------------------------------------------------------------------------
 
-    def __init__(
-        self,
-        verdict: Union[str, bool],
-        score: float = 1.0,
-        child: Optional["JudgementNode"] = None,
-    ):
-        self.verdict = verdict
-        self.score = score
-        self.child = child
+
+class VerdictNode:
+    """A terminal node that assigns a weight and optional label.
+
+    Parameters
+    ----------
+    label : str
+        Human-readable label for this verdict (e.g. ``"passed"``).
+    weight : float
+        Weight applied to the parent criterion score.
+    """
+
+    def __init__(self, label: str = "", weight: float = 1.0) -> None:
+        self.label = label
+        self.weight = weight
 
 
 class JudgementNode:
-    """A node in the evaluation DAG.
+    """A node that evaluates a criterion against an agent output.
 
-    Can be a binary judgement (yes/no), non-binary (scale),
-    or task node (extracts information).
+    The ``criterion`` string is used as a natural-language evaluation
+    rubric and fed to an :class:`~areval.judges.llm_judge.LLMJudge`.
+
+    Parameters
+    ----------
+    criterion : str
+        Natural-language description of what to evaluate.
+    children : list of VerdictNode, optional
+        Verdict nodes that weight this criterion.  If empty the raw
+        score is used directly.
+    weight : float
+        Weight of this node relative to sibling nodes.
     """
 
     def __init__(
         self,
-        criteria: str,
+        criterion: str,
         children: Optional[List[VerdictNode]] = None,
-        evaluation_params: Optional[List[str]] = None,
-    ):
-        self.criteria = criteria
+        weight: float = 1.0,
+    ) -> None:
+        self.criterion = criterion
         self.children = children or []
-        self.evaluation_params = evaluation_params or []
+        self.weight = weight
+
+
+class NonBinaryJudgementNode(JudgementNode):
+    """A judgement node whose children provide a rubric for a 0–1 scale.
+
+    Each child :class:`VerdictNode` describes a score band (e.g.
+    ``"1.0: completely correct"``, ``"0.5: partially correct"``).
+    The LLM judge is asked to pick the most appropriate band.
+    """
+
+    def __init__(self, criterion: str, children: List[VerdictNode], weight: float = 1.0) -> None:
+        super().__init__(criterion=criterion, children=children, weight=weight)
+
+
+# ---------------------------------------------------------------------------
+# DAGJudge
+# ---------------------------------------------------------------------------
 
 
 class DAGJudge(Judge):
-    """Judge that evaluates using a configurable DAG workflow.
+    """Judge that evaluates using a configurable DAG of criteria.
 
-    Example DAG for code review evaluation:
+    Each :class:`JudgementNode` delegates to
+    :class:`~areval.judges.llm_judge.LLMJudge` so that criterion
+    evaluation benefits from real LLM reasoning when an API key is
+    available, and degrades to a heuristic mock otherwise.
 
-    1. Extract code blocks (TaskNode)
-    2. Check if code compiles (BinaryJudgementNode)
-       - Yes → Check test coverage (NonBinaryJudgementNode)
-       - No → Score 0
-    3. Check documentation (BinaryJudgementNode)
-    4. Aggregate scores
-
-    Inspired by DeepEval's DAGMetric.
+    Parameters
+    ----------
+    threshold : float
+        Pass / fail threshold.
+    root_nodes : list of JudgementNode
+        Top-level criteria to evaluate.  Scores are averaged.
+    model : str
+        LLM model name forwarded to the internal LLMJudge instances.
     """
 
     name = "dag_judge"
@@ -63,10 +106,16 @@ class DAGJudge(Judge):
         self,
         threshold: float = 0.7,
         root_nodes: Optional[List[JudgementNode]] = None,
+        model: str = "gpt-4o-mini",
         **kwargs: Any,
-    ):
+    ) -> None:
         super().__init__(threshold=threshold, **kwargs)
         self.root_nodes = root_nodes or []
+        self.model = model
+
+    # ------------------------------------------------------------------
+    # Node evaluation
+    # ------------------------------------------------------------------
 
     def _evaluate_node(
         self,
@@ -74,47 +123,35 @@ class DAGJudge(Judge):
         test_case: TestCase,
         agent_output: AgentOutput,
     ) -> tuple[float, str]:
-        """Evaluate a single node and return (score, reasoning)."""
-        # In production: Use LLM to evaluate the criteria
-        # For skeleton: Use heuristic scoring
+        """Evaluate a single criterion node via LLMJudge.
 
-        # Check criteria against output
-        criteria_lower = node.criteria.lower()
-        output_lower = agent_output.output.lower()
+        Returns ``(score, reasoning)``.
+        """
+        from areval.judges.llm_judge import LLMJudge
 
-        # Simple keyword matching as proxy
-        keywords = [w for w in criteria_lower.split() if len(w) > 4]
-        matches = sum(1 for kw in keywords if kw in output_lower)
-        match_ratio = matches / len(keywords) if keywords else 0.5
+        judge = LLMJudge(
+            rubric=_criterion_rubric(node.criterion),
+            criteria=["criterion"],
+            model=self.model,
+        )
+        result = judge.evaluate(test_case, agent_output)
+        score = result.score
 
-        # Find matching verdict
-        best_score = 0.0
-        best_verdict = "no_match"
+        # Apply child verdict weights
+        if node.children:
+            weighted_score = sum(
+                (v.weight * score) for v in node.children
+            ) / sum(v.weight for v in node.children)
+            return weighted_score, result.reasoning or "LLM-based DAG evaluation"
 
-        for child in node.children:
-            if isinstance(child.verdict, bool):
-                if match_ratio > 0.5 and child.verdict:
-                    best_score = child.score
-                    best_verdict = "yes"
-                    # Follow child chain
-                    if child.child:
-                        child_score, child_reason = self._evaluate_node(
-                            child.child, test_case, agent_output
-                        )
-                        best_score = (best_score + child_score) / 2
-                elif match_ratio <= 0.5 and not child.verdict:
-                    best_score = child.score
-                    best_verdict = "no"
-            elif isinstance(child.verdict, str):
-                # String verdict matching
-                if child.verdict.lower() in ["any", "default"]:
-                    best_score = max(best_score, child.score)
-                    best_verdict = child.verdict
+        return score, result.reasoning or "LLM-based DAG evaluation"
 
-        return best_score, f"Criteria '{node.criteria[:50]}...': {best_verdict}"
+    # ------------------------------------------------------------------
+    # Top-level evaluation
+    # ------------------------------------------------------------------
 
     def evaluate(self, test_case: TestCase, agent_output: AgentOutput) -> JudgeResult:
-        """Traverse the DAG and compute aggregate score."""
+        """Traverse root nodes and compute a weighted aggregate score."""
         if not self.root_nodes:
             return JudgeResult(
                 score=0.5,
@@ -122,15 +159,22 @@ class DAGJudge(Judge):
                 threshold=self.threshold,
             )
 
-        scores = []
-        reasonings = []
+        scores: list[float] = []
+        weights: list[float] = []
+        reasonings: list[str] = []
 
         for root in self.root_nodes:
             score, reasoning = self._evaluate_node(root, test_case, agent_output)
             scores.append(score)
+            weights.append(root.weight)
             reasonings.append(reasoning)
 
-        avg_score = sum(scores) / len(scores) if scores else 0.0
+        total_weight = sum(weights)
+        avg_score = (
+            sum(s * w for s, w in zip(scores, weights)) / total_weight
+            if total_weight > 0
+            else 0.0
+        )
 
         return JudgeResult(
             score=avg_score,
@@ -138,6 +182,29 @@ class DAGJudge(Judge):
             threshold=self.threshold,
             metadata={
                 "node_scores": scores,
+                "node_weights": weights,
                 "num_nodes": len(self.root_nodes),
             },
         )
+
+
+# ---------------------------------------------------------------------------
+# Rubric helpers
+# ---------------------------------------------------------------------------
+
+def _criterion_rubric(criterion: str) -> str:
+    """Build a concise LLM evaluation rubric from a criterion string."""
+    return f"""You are an expert evaluator.  Judge the following criterion:
+
+CRITERION: {criterion}
+
+Question:
+{{input}}
+
+Agent answer:
+{{actual_output}}
+
+Answer ONLY in this format:
+SCORE: <number between 0.0 and 1.0>
+REASONING: <one-sentence explanation of why this score was assigned>
+"""

@@ -7,7 +7,12 @@ them by name via ``get_judge(name, **config)``.
 from areval.judges.base import Judge, JudgeResult, get_judge, register_judge
 from areval.judges.llm_judge import LLMJudge
 from areval.judges.agent_judge import AgentJudge
-from areval.judges.dag_judge import DAGJudge, JudgementNode, VerdictNode
+from areval.judges.dag_judge import (
+    DAGJudge,
+    JudgementNode,
+    VerdictNode,
+    NonBinaryJudgementNode,
+)
 
 # ---------------------------------------------------------------------------
 # Auto-register built-in judges
@@ -26,4 +31,5 @@ __all__ = [
     "DAGJudge",
     "JudgementNode",
     "VerdictNode",
+    "NonBinaryJudgementNode",
 ]

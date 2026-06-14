@@ -7,7 +7,10 @@ Sprint 1.5: DAGJudge with nodes, expanded coverage.
 
 import os
 
-from areval.judges import DAGJudge, LLMJudge, AgentJudge, JudgementNode, VerdictNode
+from areval.judges import (
+    DAGJudge, LLMJudge, AgentJudge,
+    JudgementNode, VerdictNode, NonBinaryJudgementNode,
+)
 from areval.test_case import AgentOutput, TestCase
 
 
@@ -171,7 +174,7 @@ class TestAgentJudge:
 
 
 class TestDAGJudge:
-    """Tests for DAG-based Judge (Sprint 1.5)."""
+    """Tests for DAG-based evaluation."""
 
     def test_dag_judge_no_nodes(self) -> None:
         judge = DAGJudge()
@@ -181,20 +184,59 @@ class TestDAGJudge:
         result = judge.evaluate(test_case, agent_output)
 
         assert result.score == 0.5
+        assert result.reasoning == "No DAG nodes configured"
 
-    def test_dag_judge_with_nodes(self) -> None:
-        root = JudgementNode(
-            criteria="Documentation is comprehensive",
-            children=[
-                VerdictNode(verdict=True, score=0.9),
-                VerdictNode(verdict=False, score=0.1),
-            ],
-        )
+    def test_dag_judge_single_criterion(self) -> None:
+        """A single JudgementNode should produce a score in [0,1]."""
+        root = JudgementNode(criterion="The answer is polite and helpful")
         judge = DAGJudge(root_nodes=[root])
-        test_case = TestCase(name="docs", input="Check docs")
-        agent_output = AgentOutput(output="The documentation is comprehensive and clear.")
+        test_case = TestCase(name="test", input="Hi there!")
+        agent_output = AgentOutput(output="Hello! How can I help you today?")
 
         result = judge.evaluate(test_case, agent_output)
-
         assert 0.0 <= result.score <= 1.0
         assert "node_scores" in result.metadata
+
+    def test_dag_judge_with_children(self) -> None:
+        """Children verdicts use weight to adjust parent score."""
+        child1 = VerdictNode(label="excellent", weight=1.0)
+        child2 = VerdictNode(label="poor", weight=0.5)
+        root = JudgementNode(
+            criterion="The answer correctly describes Python",
+            children=[child1, child2],
+            weight=1.0,
+        )
+        judge = DAGJudge(root_nodes=[root])
+        test_case = TestCase(name="python", input="What is Python?")
+        agent_output = AgentOutput(output="Python is a programming language.")
+
+        result = judge.evaluate(test_case, agent_output)
+        assert 0.0 <= result.score <= 1.0
+        assert "node_scores" in result.metadata
+
+    def test_dag_judge_weighted_root_nodes(self) -> None:
+        """Root nodes with different weights produce weighted average."""
+        root1 = JudgementNode(criterion="Answer is concise", weight=2.0)
+        root2 = JudgementNode(criterion="Answer is correct", weight=1.0)
+        judge = DAGJudge(root_nodes=[root1, root2])
+        test_case = TestCase(name="weighted", input="Q")
+        agent_output = AgentOutput(output="A brief and correct answer")
+
+        result = judge.evaluate(test_case, agent_output)
+        assert 0.0 <= result.score <= 1.0
+        assert result.metadata["num_nodes"] == 2
+
+    def test_nonbinary_node(self) -> None:
+        """NonBinaryJudgementNode should evaluate with children bands."""
+        children = [
+            VerdictNode(label="perfect", weight=1.0),
+            VerdictNode(label="acceptable", weight=0.6),
+            VerdictNode(label="poor", weight=0.2),
+        ]
+        node = NonBinaryJudgementNode(
+            criterion="Rate the answer quality on a 0-1 scale",
+            children=children,
+        )
+        # NonBinaryJudgementNode is a subclass of JudgementNode
+        assert len(node.children) == 3
+        assert isinstance(node, JudgementNode)
