@@ -21,6 +21,7 @@ from typing import Optional
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
+DEFAULT_VLLM_URL = "http://localhost:8000/v1"
 DEFAULT_LMSTUDIO_URL = "http://localhost:12345/v1"
 DEFAULT_OLLAMA_URL = "http://localhost:11434"
 DEFAULT_OPENAI_URL = "https://api.openai.com/v1"
@@ -29,18 +30,18 @@ DEFAULT_LOCAL_MODEL = "qwen3-1.7b"
 
 # Profiles → default local LLM URL
 PROFILE_URL_MAP: dict[str, Optional[str]] = {
+    "vllm": DEFAULT_VLLM_URL,
     "lmstudio": DEFAULT_LMSTUDIO_URL,
     "ollama": DEFAULT_OLLAMA_URL,
-    "docker": "http://local-models:11434",
     "remote": None,
     "mock": None,
 }
 
 # Local endpoint candidates in priority order (auto-detect)
 LOCAL_CANDIDATES: list[tuple[str, str]] = [
+    ("vllm", f"{DEFAULT_VLLM_URL}/models"),
     ("lmstudio", f"{DEFAULT_LMSTUDIO_URL}/models"),
     ("ollama", f"{DEFAULT_OLLAMA_URL}/api/tags"),
-    ("docker", "http://local-models:11434/api/tags"),
 ]
 
 

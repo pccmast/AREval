@@ -325,12 +325,12 @@ class TestConfig:
             assert profile is None
             assert url is None
 
-    def test_auto_detect_profile_finds_lmstudio(self):
-        """First candidate (lmstudio) wins."""
+    def test_auto_detect_profile_finds_vllm(self):
+        """First candidate (vllm) wins."""
         with patch("areval.config._probe_http", return_value=True):
             profile, url = _auto_detect_profile()
-            assert profile == "lmstudio"
-            assert url == "http://localhost:12345/v1"
+            assert profile == "vllm"
+            assert url == "http://localhost:8000/v1"
 
 
 # ============================================================================

@@ -9,8 +9,9 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - AREVAL_PROFILE=auto
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     volumes:
       - ./.areval:/app/.areval
     command: uvicorn areval_api.main:app --host 0.0.0.0 --port 8000 --reload
@@ -27,6 +28,34 @@ services:
     depends_on:
       - api
 
+  # Optional: vLLM local model server (GPU required)
+  # Uncomment and run with: docker-compose --profile gpu up
+  # vllm:
+  #   image: vllm/vllm-openai:latest
+  #   ports:
+  #     - "8001:8000"
+  #   volumes:
+  #     - vllm_cache:/root/.cache/huggingface
+  #   entrypoint: vllm
+  #   command: >
+  #     serve Qwen/Qwen3-1.7B-GPTQ-Int8
+  #     --quantization gptq
+  #     --trust-remote-code
+  #     --served-model-name qwen3-1.7b
+  #     --max-model-len 4096
+  #     --gpu-memory-utilization 0.85
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
+  #   environment:
+  #     - HF_HUB_ENABLE_HF_TRANSFER=1
+  #   profiles:
+  #     - gpu
+
   # Optional: PostgreSQL for production storage
   # db:
   #   image: postgres:16-alpine
@@ -39,5 +68,7 @@ services:
   #   volumes:
   #     - postgres_data:/var/lib/postgresql/data
 
+# Uncomment when using vllm:
 # volumes:
+#   vllm_cache:
 #   postgres_data:

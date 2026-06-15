@@ -244,36 +244,26 @@ class TestFaithfulnessMetric:
             m.measure(tc, ao)
 
     def test_long_text_auto_upgrades_to_tier3(self, monkeypatch):
-        """context+answer > 2000 chars → Tier 3 if API key available."""
+        """context+answer > complexity_threshold → Tier 3 if API key available."""
+        from areval.metrics.base import MetricResult as MR
+
         monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
         m = FaithfulnessMetric(provider="auto", complexity_threshold=50)
-        long_context = "x" * 60  # > threshold
 
-        tc = _make_test_case(context=long_context)
-        ao = _make_agent_output("short")
+        tc = _make_test_case(context="x" * 60)  # context is 60 chars > 50
+        ao = _make_agent_output("y")
+
+        fake_t3_result = MR(
+            name="faithfulness", score=0.95,
+            reasoning="tier3 mock", threshold=0.7,
+            metadata={"tier": "tier3"},
+        )
 
         with patch.object(m, "_tier2_available", return_value=True):
-            with patch.object(m, "_evaluate_tier3") as mock_t3:
-                mock_t3.return_value = m._evaluate_tier3(tc, ao, long_context)
-                # We just need to check _evaluate_tier3 was called — but since
-                # it calls real LLMJudge, just verify it goes through the path.
-                # Let's mock differently.
-                pass
-
-        # Actually let's test it properly by mocking the tier3 path
-        m2 = FaithfulnessMetric(provider="auto", complexity_threshold=50)
-        tc2 = _make_test_case(context="x" * 60)
-        ao2 = _make_agent_output("y")
-
-        with patch.object(m2, "_tier2_available", return_value=True):
-            with patch.object(m2, "_evaluate_tier3") as mock_t3:
-                fake_result = MagicMock()
-                fake_result.score = 0.95
-                fake_result.reasoning = "ok"
-                fake_result.metadata = {"tier": "tier3"}
-                mock_t3.return_value = fake_result
-                result = m2.measure(tc2, ao2)
+            with patch.object(m, "_evaluate_tier3", return_value=fake_t3_result):
+                result = m.measure(tc, ao)
                 assert result.metadata.get("tier") == "tier3"
+                assert result.score == 0.95
 
 
 class TestAnswerRelevanceMetric:
