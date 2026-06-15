@@ -148,13 +148,15 @@ areval dashboard --port 3000
 > Without the API running it shows placeholder data and a banner:
 > "Mock data — start the API server to see live data". No white screen.
 
-**Or one command with Docker**:
+**Or run just the API in Docker**:
 
 ```bash
-docker-compose up
+docker compose up api
 # API → http://localhost:8700
-# Dashboard → http://localhost:3000
 ```
+
+> Run the dashboard locally (`areval dashboard --port 3000`) to avoid
+> Docker image pull issues from restricted networks.
 
 Open `http://localhost:3000` — the header shows connection status:
 - `Connected to API — 42 evaluations` → live data from the API

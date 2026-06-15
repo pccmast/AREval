@@ -145,13 +145,14 @@ areval dashboard --port 3000
 
 > **无需 API 也可启动**：Dashboard 内置 mock 数据降级。不启动 API 时页面会显示模拟占位数据并提示"Mock data — start the API server to see live data"，不会白屏。
 
-**或使用 Docker 一键启动**：
+**或仅启动 API（Docker）**：
 
 ```bash
-docker-compose up
+docker compose up api
 # API → http://localhost:8700
-# Dashboard → http://localhost:3000
 ```
+
+> Dashboard 推荐本地启动（`areval dashboard --port 3000`），避免拉取 Docker 镜像的网络问题。
 
 访问 `http://localhost:3000`，页面顶部会显示当前连接状态：
 - `Connected to API — 42 evaluations` → 已连接 API，显示真实数据
