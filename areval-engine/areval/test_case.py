@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -17,6 +17,8 @@ class TestStatus(str, Enum):
     SKIPPED = "skipped"
     ERROR = "error"
     TIMEOUT = "timeout"
+
+    __test__ = False  # Prevent pytest from collecting this as a test class
 
 
 @dataclass
@@ -36,13 +38,15 @@ class TestCase:
     metadata: Dict[str, Any] = field(default_factory=dict)
     tags: List[str] = field(default_factory=list)
     timeout_seconds: float = 120.0
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     # SWE-bench style fields
     task_id: Optional[str] = None
     repository: Optional[str] = None
     base_commit: Optional[str] = None
     test_command: Optional[str] = None
+
+    __test__ = False  # Prevent pytest from collecting this dataclass as a test
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -98,11 +102,13 @@ class TestResult:
     error_message: Optional[str] = None
     judge_reasoning: Optional[str] = None
     execution_time_ms: float = 0.0
-    evaluated_at: datetime = field(default_factory=datetime.utcnow)
+    evaluated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     # Regression tracking
     baseline_score: Optional[float] = None
     regression_delta: Optional[float] = None
     is_regression: bool = False
+
+    __test__ = False  # Prevent pytest from collecting this dataclass as a test
 
     def __post_init__(self):
         self.passed = self.overall_score >= self.threshold and self.status == TestStatus.PASSED
@@ -142,7 +148,7 @@ class EvaluationRun:
     description: str = ""
     test_results: List[TestResult] = field(default_factory=list)
     config: Dict[str, Any] = field(default_factory=dict)
-    started_at: datetime = field(default_factory=datetime.utcnow)
+    started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: Optional[datetime] = None
     # Aggregate metrics
     total_cases: int = 0

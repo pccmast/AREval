@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 
 from areval.metrics.base import Metric
@@ -108,7 +108,7 @@ class Evaluator:
             run.test_results.append(result)
 
         # Compute aggregates
-        run.completed_at = datetime.utcnow()
+        run.completed_at = datetime.now(timezone.utc)
         run._compute_aggregates()
 
         # Regression detection
