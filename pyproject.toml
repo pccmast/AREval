@@ -64,7 +64,7 @@ Documentation = "https://areval.readthedocs.io"
 Repository = "https://github.com/yourname/areval"
 
 [tool.hatch.build.targets.wheel]
-packages = ["areval-engine/areval", "areval-sdk/areval_sdk", "areval-cli/areval_cli"]
+packages = ["areval-engine/areval", "areval-api/areval_api", "areval-sdk/areval_sdk", "areval-cli/areval_cli"]
 
 [tool.black]
 line-length = 100
