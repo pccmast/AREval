@@ -121,9 +121,9 @@ areval compare --current results.json --baseline <baseline_id>
 areval curate --traces .areval/traces
 
 # 启动 API 服务
-python -m areval_api.main
+uv run python -m areval_api.main
 # 或
-uvicorn areval_api.main:app --host 0.0.0.0 --port 8700
+uv run uvicorn areval_api.main:app --host 0.0.0.0 --port 8700
 
 # 启动 Dashboard
 areval dashboard --port 3000
@@ -137,7 +137,7 @@ Dashboard 是 Next.js 15 构建的实时评估监控面板，支持 pass rate �
 
 ```bash
 # 终端 1：启动 API 服务（必须）
-uvicorn areval_api.main:app --host 0.0.0.0 --port 8700
+uv run python -m areval_api.main
 
 # 终端 2：启动 Dashboard
 areval dashboard --port 3000

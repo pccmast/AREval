@@ -121,9 +121,9 @@ areval compare --current results.json --baseline <baseline_id>
 areval curate --traces .areval/traces
 
 # Launch the API server
-python -m areval_api.main
+uv run python -m areval_api.main
 # or
-uvicorn areval_api.main:app --host 0.0.0.0 --port 8700
+uv run uvicorn areval_api.main:app --host 0.0.0.0 --port 8700
 
 # Launch the dashboard
 areval dashboard --port 3000
@@ -138,7 +138,7 @@ dataset management, and regression tracking.
 
 ```bash
 # Terminal 1: Start the API server (required for live data)
-uvicorn areval_api.main:app --host 0.0.0.0 --port 8700
+uv run python -m areval_api.main
 
 # Terminal 2: Launch the dashboard
 areval dashboard --port 3000
