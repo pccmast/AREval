@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -228,9 +229,18 @@ def dashboard(
 
     console.print(f"[bold blue]Starting dashboard on http://{host}:{port}[/bold blue]")
 
+    npm_path = shutil.which("npm")
+    if not npm_path:
+        console.print("[yellow]npm not found in PATH.[/yellow]")
+        console.print(
+            "Please install Node.js and npm, then ensure they are in your system PATH.\n"
+            f"After installing:  cd {dash_dir} && npm install && npm run dev"
+        )
+        return
+
     try:
         subprocess.run(
-            ["npm", "run", "dev", "--", "--port", str(port), "--hostname", host],
+            [npm_path, "run", "dev", "--", "--port", str(port), "--hostname", host],
             cwd=str(dash_dir),
             check=False,
         )
