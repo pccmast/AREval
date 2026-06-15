@@ -16,17 +16,18 @@ services:
       - ./.areval:/app/.areval
     command: uvicorn areval_api.main:app --host 0.0.0.0 --port 8700 --reload
 
-  # Dashboard (Next.js)
-  dashboard:
-    build:
-      context: ./areval-dashboard
-      dockerfile: Dockerfile
-      args:
-        - NEXT_PUBLIC_API_URL=http://localhost:8700
-    ports:
-      - "3000:3000"
-    depends_on:
-      - api
+  # Dashboard — run locally instead: areval dashboard --port 3000
+  # (uncomment if you have reliable Docker Hub access)
+  # dashboard:
+  #   build:
+  #     context: ./areval-dashboard
+  #     dockerfile: Dockerfile
+  #     args:
+  #       - NEXT_PUBLIC_API_URL=http://localhost:8700
+  #   ports:
+  #     - "3000:3000"
+  #   depends_on:
+  #     - api
 
   # Optional: vLLM local model server (GPU required)
   # Uncomment and run with: docker-compose --profile gpu up
