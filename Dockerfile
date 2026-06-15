@@ -1,34 +1,22 @@
 # AREval API Server Dockerfile
-# Multi-stage build using uv for reproducible installs
+FROM python:3.12-slim
 
-# Stage 1: Build with dependencies
-FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder
 WORKDIR /app
 
-# Enable bytecode compilation and copy-on-write
-ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# Install dependencies (layered for caching)
-COPY pyproject.toml uv.lock ./
+# Copy everything needed for build (must come before install!)
+COPY pyproject.toml uv.lock README.md ./
 COPY areval-engine/ ./areval-engine/
 COPY areval-api/ ./areval-api/
 COPY areval-sdk/ ./areval-sdk/
 COPY areval-cli/ ./areval-cli/
-COPY README.md ./
 
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --extra all
+# Install dependencies via uv (fast, uses lock file)
+RUN uv sync --frozen --no-dev --extra all
 
-# Stage 2: Runtime
-FROM python:3.12-slim AS runtime
-WORKDIR /app
-
-COPY --from=builder /app/.venv /app/.venv
-COPY --from=builder /app/areval-engine /app/areval-engine
-COPY --from=builder /app/areval-api /app/areval-api
-COPY --from=builder /app/areval-sdk /app/areval-sdk
-COPY --from=builder /app/pyproject.toml /app/
-
+# Use venv python
 ENV PATH="/app/.venv/bin:$PATH"
 
 EXPOSE 8700
