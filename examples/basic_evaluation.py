@@ -1,7 +1,23 @@
 """Basic evaluation example.
 
-Demonstrates how to use AREval to evaluate a simple agent function.
+Demonstrates: TestCase → Agent → Evaluator(metrics + judges) → Summary.
+
+Run with:
+    uv run python examples/basic_evaluation.py
 """
+
+import os
+import sys
+from pathlib import Path
+
+# -- 自动加载 .env（可选，本地模型 token 等）--
+_env = Path(__file__).resolve().parent.parent / ".env"
+if _env.exists():
+    for _line in _env.read_text(encoding="utf-8").splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _, _v = _line.partition("=")
+            os.environ.setdefault(_k.strip(), _v.strip().strip('"').strip("'"))
 
 from areval.evaluator import Evaluator
 from areval.test_case import TestCase, AgentOutput
@@ -9,8 +25,7 @@ from areval.metrics import ExactMatchMetric, SemanticSimilarityMetric
 from areval.judges import LLMJudge
 
 
-def my_simple_agent(input_text: str) -> str:
-    """A simple agent for demonstration."""
+def my_agent(input_text: str) -> str:
     responses = {
         "What is 2+2?": "4",
         "Capital of France?": "Paris",
@@ -20,52 +35,44 @@ def my_simple_agent(input_text: str) -> str:
 
 
 def main():
-    # 1. Define test cases
+    # ---- Test cases ----
     test_cases = [
-        TestCase(
-            name="math_basic",
-            input="What is 2+2?",
-            expected_output="4",
-            tags=["math"],
-        ),
-        TestCase(
-            name="geography",
-            input="Capital of France?",
-            expected_output="Paris",
-            tags=["geography"],
-        ),
-        TestCase(
-            name="greeting",
-            input="Hello",
-            expected_output="Hello! How can I help you?",
-            tags=["conversation"],
-        ),
+        TestCase(name="math",    input="What is 2+2?",       expected_output="4",                        tags=["math"]),
+        TestCase(name="geo",     input="Capital of France?", expected_output="Paris",                     tags=["geo"]),
+        TestCase(name="greet",   input="Hello",              expected_output="Hello! How can I help you?", tags=["conv"]),
     ]
+    print("Test cases:")
+    for tc in test_cases:
+        print(f"  {tc.name}: '{tc.input}' -> expected '{tc.expected_output}'")
 
-    # 2. Build evaluator with metrics and judges
-    evaluator = Evaluator(threshold=0.7)
-    evaluator.add_metric(ExactMatchMetric())
-    evaluator.add_metric(SemanticSimilarityMetric())
-    evaluator.add_judge(LLMJudge(threshold=0.6))
-
-    # 3. Run evaluation
-    def agent_fn(tc: TestCase) -> AgentOutput:
-        output = my_simple_agent(tc.input)
-        return AgentOutput(output=output, latency_ms=50.0)
-
-    run = evaluator.evaluate(
-        test_cases=test_cases,
-        agent_fn=agent_fn,
-        run_name="basic-demo",
-        run_description="Simple agent evaluation",
+    # ---- Evaluator (offline -- no API key needed) ----
+    evaluator = (
+        Evaluator(threshold=0.7)
+        .add_metric(ExactMatchMetric(case_sensitive=False))
+        .add_metric(SemanticSimilarityMetric(embedding_provider="offline"))
+        .add_judge(LLMJudge(provider="mock"))
     )
 
-    # 4. Print results
-    print(evaluator.summary(run))
+    def agent_fn(tc: TestCase) -> AgentOutput:
+        output = my_agent(tc.input)
+        print(f"  Agent '{tc.name}': {tc.input!r} -> {output!r}")
+        return AgentOutput(output=output, latency_ms=50.0)
 
-    # 5. Save as baseline
-    baseline_id = evaluator.create_baseline(run, name="v1-baseline")
-    print(f"\nBaseline saved: {baseline_id}")
+    print("\nRunning evaluation...")
+    run = evaluator.evaluate(test_cases=test_cases, agent_fn=agent_fn,
+                             run_name="basic-demo", run_description="3 cases, offline mode")
+
+    # ---- Per-case detail ----
+    print("\nPer-case results:")
+    for tr in run.test_results:
+        status = "PASS" if tr.passed else "FAIL"
+        print(f"  [{status}] {tr.test_case.name}: score={tr.overall_score:.3f} "
+              f"(exact={tr.scores.get('exact_match',0):.1f}, "
+              f"sem={tr.scores.get('semantic_similarity',0):.1f}, "
+              f"judge={tr.scores.get('llm_judge',0):.1f})")
+
+    # ---- Summary ----
+    print("\n" + evaluator.summary(run))
 
 
 if __name__ == "__main__":

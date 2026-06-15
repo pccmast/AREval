@@ -167,9 +167,14 @@ pytest tests/test_judges.py -v
 ```
 
 ```bash
-# 运行示例脚本
-python examples/basic_evaluation.py
-python examples/agent_with_tools.py
+# 运行示例脚本（独立模板，适合复制改改就跑）
+uv run python examples/basic_evaluation.py
+uv run python examples/agent_with_tools.py
+uv run python examples/online_monitoring.py
+uv run python examples/red_team_evaluation.py
+
+# 或运行全功能演示（17 章，覆盖全部 API）
+uv run python demo.py
 ```
 
 ---

@@ -167,9 +167,14 @@ pytest tests/test_judges.py -v
 ```
 
 ```bash
-# Run the example scripts
-python examples/basic_evaluation.py
-python examples/agent_with_tools.py
+# Run example scripts (standalone templates — copy and adapt)
+uv run python examples/basic_evaluation.py
+uv run python examples/agent_with_tools.py
+uv run python examples/online_monitoring.py
+uv run python examples/red_team_evaluation.py
+
+# Or run the full-feature demo (17 chapters, covers entire API)
+uv run python demo.py
 ```
 
 ---

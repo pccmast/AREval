@@ -27,10 +27,27 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 
+# 自动加载 .env 文件（无第三方依赖），避免每次手敲环境变量
+_env_path = Path(__file__).resolve().parent / ".env" if "__file__" in dir() else Path.cwd() / ".env"
+if _env_path.exists():
+    for _line in _env_path.read_text(encoding="utf-8").splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _key, _, _val = _line.partition("=")
+            _key, _val = _key.strip(), _val.strip().strip('"').strip("'")
+            if _key not in os.environ:
+                os.environ[_key] = _val
+
 # 确保本地包可导入（支持直接运行 python demo.py）
 _script_dir = Path(__file__).resolve().parent if "__file__" in dir() else Path.cwd()
 sys.path.insert(0, str(_script_dir / "areval-engine"))
 sys.path.insert(0, str(_script_dir / "areval-sdk"))
+
+# 强制 UTF-8 输出（Windows 终端默认 GBK 会导致 emoji/特殊字符报错）
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
 
 
 @contextmanager
@@ -755,7 +772,19 @@ def demo_judges(tc: Any, ao: Any):
     judge_dag = DAGJudge(root_nodes=root_nodes, threshold=0.7)
     with quiet():
         result_dag = judge_dag.evaluate(tc, ao)
-    console.print(fmt_label("  -> weighted score", f"{result_dag.score:.2f} (0.4 + 0.3 + 0.3)"))
+    # 展示各节点独立得分 + 加权计算过程
+    console.print("  [dim]== 各节点得分 ==[/dim]")
+    if result_dag.criteria_scores:
+        total = 0.0
+        for node in root_nodes:
+            s = result_dag.criteria_scores.get(node.criterion, 0)
+            contribution = s * node.weight
+            total += contribution
+            console.print(fmt_label(f"  [{node.weight}] {node.criterion}",
+                                    f"{s:.2f} × {node.weight} = {contribution:.2f}"))
+        console.print(fmt_label(f"  -> 加权总分", f"{result_dag.score:.2f}"))
+    else:
+        console.print(fmt_label("  -> weighted score", f"{result_dag.score:.2f} (0.4 + 0.3 + 0.3)"))
     console.print(fmt_label("  -> passed", result_dag.passed))
 
 

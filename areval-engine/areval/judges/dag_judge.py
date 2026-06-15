@@ -180,6 +180,9 @@ class DAGJudge(Judge):
             score=avg_score,
             reasoning=" | ".join(reasonings),
             threshold=self.threshold,
+            criteria_scores={
+                node.criterion: s for node, s in zip(self.root_nodes, scores)
+            },
             metadata={
                 "node_scores": scores,
                 "node_weights": weights,

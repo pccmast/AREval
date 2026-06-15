@@ -55,6 +55,10 @@ htmlcov/
 .env
 .env.local
 
+# Generated artifacts
+tool_eval_results.json
+.areval/
+
 # OS
 .DS_Store
 Thumbs.db
