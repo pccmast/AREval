@@ -129,9 +129,38 @@ uvicorn areval_api.main:app --host 0.0.0.0 --port 8700
 areval dashboard --port 3000
 ```
 
----
+### Dashboard
 
-## API Endpoints
+A Next.js 15 real-time evaluation dashboard with pass rate trends, run history,
+dataset management, and regression tracking.
+
+**Startup sequence**:
+
+```bash
+# Terminal 1: Start the API server (required for live data)
+uvicorn areval_api.main:app --host 0.0.0.0 --port 8700
+
+# Terminal 2: Launch the dashboard
+areval dashboard --port 3000
+```
+
+> **No API? No problem.** The dashboard has built-in mock data fallback.
+> Without the API running it shows placeholder data and a banner:
+> "Mock data — start the API server to see live data". No white screen.
+
+**Or one command with Docker**:
+
+```bash
+docker-compose up
+# API → http://localhost:8700
+# Dashboard → http://localhost:3000
+```
+
+Open `http://localhost:3000` — the header shows connection status:
+- `Connected to API — 42 evaluations` → live data from the API
+- `Mock data — start the API server to see live data` → API not running, showing placeholders
+
+---
 
 Start the server then hit these endpoints:
 

@@ -129,9 +129,35 @@ uvicorn areval_api.main:app --host 0.0.0.0 --port 8700
 areval dashboard --port 3000
 ```
 
----
+### Dashboard 可视化面板
 
-## API 端点
+Dashboard 是 Next.js 15 构建的实时评估监控面板，支持 pass rate 趋势图、评估历史、数据集管理等。
+
+**启动顺序**：
+
+```bash
+# 终端 1：启动 API 服务（必须）
+uvicorn areval_api.main:app --host 0.0.0.0 --port 8700
+
+# 终端 2：启动 Dashboard
+areval dashboard --port 3000
+```
+
+> **无需 API 也可启动**：Dashboard 内置 mock 数据降级。不启动 API 时页面会显示模拟占位数据并提示"Mock data — start the API server to see live data"，不会白屏。
+
+**或使用 Docker 一键启动**：
+
+```bash
+docker-compose up
+# API → http://localhost:8700
+# Dashboard → http://localhost:3000
+```
+
+访问 `http://localhost:3000`，页面顶部会显示当前连接状态：
+- `Connected to API — 42 evaluations` → 已连接 API，显示真实数据
+- `Mock data — start the API server to see live data` → API 未运行，显示模拟占位
+
+---
 
 启动 API 服务后可用：
 
