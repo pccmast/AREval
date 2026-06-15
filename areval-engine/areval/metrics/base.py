@@ -29,13 +29,31 @@ class Metric(ABC):
 
     The plugin architecture allows users to register custom metrics
     by subclassing Metric and implementing the measure() method.
+
+    Parameters
+    ----------
+    threshold : float, optional
+        Pass/fail threshold.  Default ``0.7``.
+    provider : str
+        Model tier preference:
+
+        - ``"auto"``  — auto-fallback Tier 2 → Tier 3 → Tier 1 (default)
+        - ``"local"`` — Tier 2 local model only; raise if unavailable
+        - ``"llm"``   — Tier 3 remote LLM only; raise if unavailable
+        - ``"mock"``  — Tier 1 pure-code / heuristic only
     """
 
     name: str = "base_metric"
     threshold: float = 0.7
 
-    def __init__(self, threshold: Optional[float] = None, **kwargs: Any):
+    def __init__(
+        self,
+        threshold: Optional[float] = None,
+        provider: str = "auto",
+        **kwargs: Any,
+    ):
         self.threshold = threshold or self.threshold
+        self.provider = provider
         self.config = kwargs
 
     @abstractmethod
@@ -61,6 +79,7 @@ class Metric(ABC):
         return {
             "name": self.name,
             "threshold": self.threshold,
+            "provider": self.provider,
             "config": self.config,
         }
 
