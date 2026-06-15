@@ -32,6 +32,23 @@ cat .areval/runs/*.json
 areval dashboard
 ```
 
+### Demo Script
+
+The project root includes `demo.py` — a **17-chapter comprehensive feature walkthrough** covering all public APIs:
+
+- **Ch 01–06**: 13 evaluation metrics (exact-match / semantic similarity / RAG triad / agent behavior / safety red-team)
+- **Ch 07**: 3 judge modes (LLMJudge / AgentJudge / DAGJudge)
+- **Ch 08**: Evaluator pipeline (chain API + full workflow)
+- **Ch 09**: Statistical regression detection (paired t-test + Cohen's d + baseline management)
+- **Ch 10–17**: Dataset management / storage backends / distributed tracing / online evaluation / SDK decorators / CI/CD reporters / serialization / summary
+
+```bash
+# Zero-config run (offline mock mode, ~15 seconds)
+python demo.py
+```
+
+All features auto-degrade to heuristic offline mode when no API key is available — ideal for quick project overview, onboarding, and interview prep.
+
 ---
 
 ## Configuration
