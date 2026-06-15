@@ -7,24 +7,24 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "8700:8700"
     environment:
       - AREVAL_PROFILE=auto
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     volumes:
       - ./.areval:/app/.areval
-    command: uvicorn areval_api.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn areval_api.main:app --host 0.0.0.0 --port 8700 --reload
 
   # Dashboard (Next.js)
   dashboard:
     build:
       context: ./areval-dashboard
       dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=http://localhost:8700
     ports:
       - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
     depends_on:
       - api
 

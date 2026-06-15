@@ -123,7 +123,7 @@ areval curate --traces .areval/traces
 # 启动 API 服务
 python -m areval_api.main
 # 或
-uvicorn areval_api.main:app --host 0.0.0.0 --port 8000
+uvicorn areval_api.main:app --host 0.0.0.0 --port 8700
 
 # 启动 Dashboard
 areval dashboard --port 3000

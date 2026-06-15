@@ -123,7 +123,7 @@ areval curate --traces .areval/traces
 # Launch the API server
 python -m areval_api.main
 # or
-uvicorn areval_api.main:app --host 0.0.0.0 --port 8000
+uvicorn areval_api.main:app --host 0.0.0.0 --port 8700
 
 # Launch the dashboard
 areval dashboard --port 3000

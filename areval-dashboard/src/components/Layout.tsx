@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { fetchStats } from "@/lib/apiClient";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8700";
 
 const navItems = [
   { href: "/", label: "Overview", icon: Activity },

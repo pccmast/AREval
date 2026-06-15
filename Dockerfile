@@ -15,6 +15,6 @@ COPY areval-sdk/ ./areval-sdk/
 # Install in development mode
 RUN pip install -e ./areval-engine -e ./areval-api -e ./areval-sdk
 
-EXPOSE 8000
+EXPOSE 8700
 
-CMD ["uvicorn", "areval_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "areval_api.main:app", "--host", "0.0.0.0", "--port", "8700"]

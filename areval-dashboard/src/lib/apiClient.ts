@@ -5,7 +5,7 @@
  * When the API is unreachable, returns null so pages can fall back to mock data.
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8700";
 
 // ---------------------------------------------------------------------------
 // Types matching areval-api response shapes
