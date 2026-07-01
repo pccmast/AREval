@@ -32,6 +32,7 @@ from areval.judges import LLMJudge
 from areval.online.evaluator import OnlineEvaluator
 from areval.online.storage import TimeSeriesStorage
 from areval.online.monitors import QualityMonitor, AlertConfig
+from .alerting import build_alert_chain
 from areval.test_case import TestCase as TCase, AgentOutput as AOutput
 from areval.utils.serialization import reconstruct_run
 from areval.storage import JsonFileStore, SqliteStore
@@ -73,7 +74,8 @@ _online_evaluator = OnlineEvaluator(
     storage=_online_storage,
     monitor=QualityMonitor(
         storage=_online_storage,
-        config=AlertConfig(window_minutes=30, min_samples=3),
+        config=AlertConfig(window_minutes=30, min_samples=30),
+        alert_callback=build_alert_chain(),
     ),
     async_mode=False,  # sync for API demo
 )
@@ -402,6 +404,12 @@ async def online_trend(
 ) -> List[Dict[str, Any]]:
     """Get time-series trend data."""
     return _online_evaluator.get_trend(window_minutes=window_minutes, bucket_minutes=bucket_minutes)
+
+
+@app.get("/api/v1/online/alerts")
+async def online_alerts(limit: int = 50) -> List[Dict[str, Any]]:
+    """Get recent alert history."""
+    return _online_evaluator.monitor.get_recent_alerts(limit=limit)
 
 
 if __name__ == "__main__":

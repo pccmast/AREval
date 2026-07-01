@@ -91,6 +91,30 @@ export interface ComparisonEntry {
   regressed: boolean;
 }
 
+export interface HealthResponse {
+  status: string;
+  pass_rate: number;
+  avg_score: number;
+  sample_count: number;
+  active_alerts: number;
+}
+
+export interface TrendPoint {
+  time: string;
+  pass_rate: number;
+  avg_score: number;
+  sample_count: number;
+}
+
+export interface AlertRecord {
+  type: string;
+  severity: string;
+  message: string;
+  current_value: number;
+  threshold_value: number;
+  timestamp: string;
+}
+
 // ---------------------------------------------------------------------------
 // Core fetch helper
 // ---------------------------------------------------------------------------
@@ -129,4 +153,16 @@ export async function fetchDatasets(): Promise<DatasetEntry[] | null> {
 
 export async function fetchBaselines(): Promise<BaselineEntry[] | null> {
   return apiGet<BaselineEntry[]>("/api/v1/baselines");
+}
+
+export async function fetchOnlineHealth(): Promise<HealthResponse | null> {
+  return apiGet<HealthResponse>("/api/v1/online/health");
+}
+
+export async function fetchOnlineTrend(windowMinutes = 1440): Promise<TrendPoint[] | null> {
+  return apiGet<TrendPoint[]>(`/api/v1/online/trend?window_minutes=${windowMinutes}`);
+}
+
+export async function fetchOnlineAlerts(limit = 50): Promise<AlertRecord[] | null> {
+  return apiGet<AlertRecord[]>(`/api/v1/online/alerts?limit=${limit}`);
 }

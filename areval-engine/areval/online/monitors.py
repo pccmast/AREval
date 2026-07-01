@@ -73,6 +73,7 @@ class QualityMonitor:
         self.config = config or AlertConfig()
         self.alert_callback = alert_callback
         self._last_alert_times: Dict[str, datetime] = {}
+        self._alert_history: List[Alert] = []
 
     # ------------------------------------------------------------------
     # Public
@@ -120,7 +121,7 @@ class QualityMonitor:
         alerts = self.check()
 
         if stats["total"] < self.config.min_samples:
-            status = "unknown"  # not enough data
+            status = "unknown"
         elif stats["pass_rate"] < self.config.pass_rate_threshold / 2:
             status = "critical"
         elif stats["pass_rate"] < self.config.pass_rate_threshold:
@@ -135,6 +136,20 @@ class QualityMonitor:
             "sample_count": stats["total"],
             "active_alerts": len(alerts),
         }
+
+    def get_recent_alerts(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Return recent alert history for Dashboard / API consumption."""
+        return [
+            {
+                "type": a.alert_type,
+                "severity": a.severity,
+                "message": a.message,
+                "current_value": a.current_value,
+                "threshold_value": a.threshold_value,
+                "timestamp": a.timestamp.isoformat(),
+            }
+            for a in self._alert_history[-limit:]
+        ]
 
     # ------------------------------------------------------------------
     # Internal
@@ -161,6 +176,10 @@ class QualityMonitor:
             threshold_value=threshold_value,
             window_stats=stats,
         )
+        self._alert_history.append(alert)
+        # Keep history bounded (most recent 500)
+        if len(self._alert_history) > 500:
+            self._alert_history = self._alert_history[-500:]
         if self.alert_callback:
             try:
                 self.alert_callback(alert)

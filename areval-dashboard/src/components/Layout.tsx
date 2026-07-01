@@ -8,6 +8,7 @@ import {
   Settings,
   Shield,
   GitCompare,
+  Radio,
 } from "lucide-react";
 import { fetchStats } from "@/lib/apiClient";
 
@@ -18,6 +19,7 @@ const navItems = [
   { href: "/evaluations", label: "Evaluations", icon: BarChart3 },
   { href: "/datasets", label: "Datasets", icon: Database },
   { href: "/regression", label: "Regression", icon: GitCompare },
+  { href: "/online", label: "Online Monitor", icon: Radio },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
