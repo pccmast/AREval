@@ -17,10 +17,8 @@ from __future__ import annotations
 import re
 from typing import Any, Optional
 
-import os
-
-from areval.config import log_degradation
 from areval.metrics.base import Metric, MetricResult
+from areval.routing import router
 from areval.test_case import TestCase, AgentOutput
 
 
@@ -276,16 +274,6 @@ class FaithfulnessMetric(Metric):
 
     # -- helpers ---------------------------------------------------------------
 
-    def _tier2_available(self) -> bool:
-        """Check if LocalLLMProvider is reachable."""
-        from areval.providers.local_llm import LocalLLMProvider
-
-        p = LocalLLMProvider(
-            base_url=self._local_url,
-            model=self._local_model,
-        )
-        return p.is_available()
-
     def _evaluate_tier2(self, context: str, answer: str) -> MetricResult:
         """Sentence-level faithfulness via qwen3-1.7b (batch mode)."""
         sentences = _split_sentences(answer)
@@ -390,50 +378,16 @@ class FaithfulnessMetric(Metric):
 
         answer = agent_output.output
 
-        # Force mock → straight to Tier 1
-        if self.provider == "mock":
-            return self._evaluate_tier1(test_case, agent_output, context)
+        # Long-text → use a different routing key (auto-upgrade to Tier 3)
+        is_complex = len(context) + len(answer) > self.complexity_threshold
+        task_name = "faithfulness_complex" if is_complex else "faithfulness"
 
-        # Force local → Tier 2 or raise
-        if self.provider == "local":
-            if self._tier2_available():
-                return self._evaluate_tier2(context, answer)
-            raise RuntimeError(
-                "provider='local' but local LLM is not available"
-            )
+        tier = router.resolve(task_name, provider=self.provider)
 
-        # Force remote → Tier 3 or raise
-        if self.provider == "llm":
-            if not os.environ.get("OPENAI_API_KEY"):
-                raise RuntimeError(
-                    "provider='llm' but no OPENAI_API_KEY is set"
-                )
+        if tier == "tier2":
+            return self._evaluate_tier2(context, answer)
+        if tier == "tier3":
             return self._evaluate_tier3(test_case, agent_output, context)
-
-        # --- provider == "auto" (default) ---
-        # Long-text → auto-upgrade to Tier 3
-        if len(context) + len(answer) > self.complexity_threshold:
-            if os.environ.get("OPENAI_API_KEY"):
-                return self._evaluate_tier3(test_case, agent_output, context)
-            log_degradation(
-                "3", "2",
-                "Long text but no API key; attempting Tier 2",
-            )
-
-        # Try Tier 2
-        if self._tier2_available():
-            try:
-                return self._evaluate_tier2(context, answer)
-            except Exception as exc:
-                log_degradation("2", "3", f"Tier 2 failed: {exc}")
-
-        # Try Tier 3
-        if os.environ.get("OPENAI_API_KEY"):
-            log_degradation("2", "3", "Local LLM unavailable, falling back to remote")
-            return self._evaluate_tier3(test_case, agent_output, context)
-
-        # Fall back to Tier 1
-        log_degradation("2", "mock", "No LLM available, falling back to heuristic")
         return self._evaluate_tier1(test_case, agent_output, context)
 
 
@@ -468,12 +422,6 @@ class AnswerRelevanceMetric(Metric):
         self._local_model = local_llm_model
 
     # -- helpers ---------------------------------------------------------------
-
-    def _tier2_available(self) -> bool:
-        from areval.providers.local_llm import LocalLLMProvider
-
-        p = LocalLLMProvider(base_url=self._local_url, model=self._local_model)
-        return p.is_available()
 
     def _evaluate_tier2(self, question: str, answer: str) -> MetricResult:
         from areval.providers.local_llm import LocalLLMProvider
@@ -545,33 +493,12 @@ class AnswerRelevanceMetric(Metric):
                 threshold=self.threshold,
             )
 
-        # mock → Tier 1
-        if self.provider == "mock":
-            return self._evaluate_tier1(test_case, agent_output)
+        tier = router.resolve("answer_relevance", provider=self.provider)
 
-        # local → Tier 2 or raise
-        if self.provider == "local":
-            if self._tier2_available():
-                return self._evaluate_tier2(question, answer)
-            raise RuntimeError("provider='local' but local LLM is not available")
-
-        # llm → Tier 3 or raise
-        if self.provider == "llm":
-            if not os.environ.get("OPENAI_API_KEY"):
-                raise RuntimeError("provider='llm' but no OPENAI_API_KEY is set")
+        if tier == "tier2":
+            return self._evaluate_tier2(question, answer)
+        if tier == "tier3":
             return self._evaluate_tier3(test_case, agent_output)
-
-        # auto: Tier 2 → Tier 3 → Tier 1
-        if self._tier2_available():
-            try:
-                return self._evaluate_tier2(question, answer)
-            except Exception as exc:
-                log_degradation("2", "3", f"Tier 2 failed: {exc}")
-        if os.environ.get("OPENAI_API_KEY"):
-            log_degradation("2", "3", "Local LLM unavailable, falling back to remote")
-            return self._evaluate_tier3(test_case, agent_output)
-
-        log_degradation("2", "mock", "No LLM available, falling back to heuristic")
         return self._evaluate_tier1(test_case, agent_output)
 
 
@@ -606,12 +533,6 @@ class ContextPrecisionMetric(Metric):
         self._local_model = local_llm_model
 
     # -- helpers ---------------------------------------------------------------
-
-    def _tier2_available(self) -> bool:
-        from areval.providers.local_llm import LocalLLMProvider
-
-        p = LocalLLMProvider(base_url=self._local_url, model=self._local_model)
-        return p.is_available()
 
     def _evaluate_tier2(self, question: str, context: str) -> MetricResult:
         from areval.providers.local_llm import LocalLLMProvider
@@ -686,31 +607,10 @@ class ContextPrecisionMetric(Metric):
                 threshold=self.threshold,
             )
 
-        # mock → Tier 1
-        if self.provider == "mock":
-            return self._evaluate_tier1(test_case, agent_output, context)
+        tier = router.resolve("context_precision", provider=self.provider)
 
-        # local → Tier 2 or raise
-        if self.provider == "local":
-            if self._tier2_available():
-                return self._evaluate_tier2(question, context)
-            raise RuntimeError("provider='local' but local LLM is not available")
-
-        # llm → Tier 3 or raise
-        if self.provider == "llm":
-            if not os.environ.get("OPENAI_API_KEY"):
-                raise RuntimeError("provider='llm' but no OPENAI_API_KEY is set")
+        if tier == "tier2":
+            return self._evaluate_tier2(question, context)
+        if tier == "tier3":
             return self._evaluate_tier3(test_case, agent_output, context)
-
-        # auto: Tier 2 → Tier 3 → Tier 1
-        if self._tier2_available():
-            try:
-                return self._evaluate_tier2(question, context)
-            except Exception as exc:
-                log_degradation("2", "3", f"Tier 2 failed: {exc}")
-        if os.environ.get("OPENAI_API_KEY"):
-            log_degradation("2", "3", "Local LLM unavailable, falling back to remote")
-            return self._evaluate_tier3(test_case, agent_output, context)
-
-        log_degradation("2", "mock", "No LLM available, falling back to heuristic")
         return self._evaluate_tier1(test_case, agent_output, context)

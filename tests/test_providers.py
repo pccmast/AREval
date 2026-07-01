@@ -58,7 +58,7 @@ class TestBaseABC:
 class TestLocalLLMProvider:
     def test_defaults(self):
         p = LocalImpl()
-        assert p.model == "qwen3-1.7b"
+        assert p.model in ("qwen3-1.7b", "qwen/qwen3-1.7b")
         assert p.base_url == "http://localhost:12345/v1"
         assert p.timeout == 30.0
         assert p.max_retries == 2

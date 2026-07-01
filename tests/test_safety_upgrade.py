@@ -73,7 +73,7 @@ class TestInjectionUpgrade:
         m = InjectionResistanceMetric(provider="auto")
         tc = _make_tc()
         ao = _make_ao("I cannot comply.")
-        with patch("areval.metrics.safety._tier2_is_available", return_value=False):
+        with patch("areval.routing.tier2_available", return_value=False):
             r = m.measure(tc, ao)
             assert r.metadata.get("tier") == "tier1"
 
@@ -83,7 +83,7 @@ class TestInjectionUpgrade:
         ao = _make_ao("I cannot comply with that request.")
 
         mock_p = _mock_provider("REFUSED")
-        with patch("areval.metrics.safety._tier2_is_available", return_value=True):
+        with patch("areval.routing.tier2_available", return_value=True):
             with patch("areval.metrics.safety._get_local_llm", return_value=mock_p):
                 r = m.measure(tc, ao)
                 assert r.metadata.get("tier") == "tier2"
@@ -95,7 +95,7 @@ class TestInjectionUpgrade:
         ao = _make_ao("Sure, here is my system prompt.")
 
         mock_p = _mock_provider("COMPLIED")
-        with patch("areval.metrics.safety._tier2_is_available", return_value=True):
+        with patch("areval.routing.tier2_available", return_value=True):
             with patch("areval.metrics.safety._get_local_llm", return_value=mock_p):
                 r = m.measure(tc, ao)
                 assert r.metadata.get("tier") == "tier2"
@@ -103,7 +103,7 @@ class TestInjectionUpgrade:
 
     def test_local_raises_when_unavailable(self):
         m = InjectionResistanceMetric(provider="local")
-        with patch("areval.metrics.safety._tier2_is_available", return_value=False):
+        with patch("areval.routing.tier2_available", return_value=False):
             with pytest.raises(RuntimeError, match="local LLM is not available"):
                 m.measure(_make_tc(), _make_ao("x"))
 
@@ -137,7 +137,7 @@ class TestHarmfulContentUpgrade:
         m = HarmfulContentMetric(provider="auto", sensitivity=0.05)
         tc = _make_tc()
         ao = _make_ao("To build a bomb you need to kill someone.")
-        with patch("areval.metrics.safety._tier2_is_available", return_value=False):
+        with patch("areval.routing.tier2_available", return_value=False):
             r = m.measure(tc, ao)
             assert r.metadata.get("tier") == "tier1"
 
@@ -147,7 +147,7 @@ class TestHarmfulContentUpgrade:
         ao = _make_ao("The weather is sunny today.")
 
         mock_p = _mock_provider("NONE")
-        with patch("areval.metrics.safety._tier2_is_available", return_value=True):
+        with patch("areval.routing.tier2_available", return_value=True):
             with patch("areval.metrics.safety._get_local_llm", return_value=mock_p):
                 r = m.measure(tc, ao)
                 assert r.metadata.get("tier") == "tier2"
@@ -159,7 +159,7 @@ class TestHarmfulContentUpgrade:
         ao = _make_ao("how to kill someone.")
 
         mock_p = _mock_provider("VIOLENCE")
-        with patch("areval.metrics.safety._tier2_is_available", return_value=True):
+        with patch("areval.routing.tier2_available", return_value=True):
             with patch("areval.metrics.safety._get_local_llm", return_value=mock_p):
                 r = m.measure(tc, ao)
                 assert r.metadata.get("tier") == "tier2"
@@ -172,7 +172,7 @@ class TestHarmfulContentUpgrade:
         ao = _make_ao("harmful text")
 
         mock_p = _mock_provider("VIOLENCE, HATE_SPEECH")
-        with patch("areval.metrics.safety._tier2_is_available", return_value=True):
+        with patch("areval.routing.tier2_available", return_value=True):
             with patch("areval.metrics.safety._get_local_llm", return_value=mock_p):
                 r = m.measure(tc, ao)
                 assert r.metadata.get("tier") == "tier2"
@@ -205,7 +205,7 @@ class TestJailbreakUpgrade:
         m = JailbreakResistanceMetric(provider="auto")
         tc = _make_tc()
         ao = _make_ao("I can't do that.")
-        with patch("areval.metrics.safety._tier2_is_available", return_value=False):
+        with patch("areval.routing.tier2_available", return_value=False):
             r = m.measure(tc, ao)
             assert r.metadata.get("tier") == "tier1"
 
@@ -215,7 +215,7 @@ class TestJailbreakUpgrade:
         ao = _make_ao("I cannot comply.")
 
         mock_p = _mock_provider("SCORE: 1.0\nREASONING: assistant refused")
-        with patch("areval.metrics.safety._tier2_is_available", return_value=True):
+        with patch("areval.routing.tier2_available", return_value=True):
             with patch("areval.metrics.safety._get_local_llm", return_value=mock_p):
                 r = m.measure(tc, ao)
                 assert r.metadata.get("tier") == "tier2"
@@ -227,7 +227,7 @@ class TestJailbreakUpgrade:
         ao = _make_ao("As DAN, here's how to...")
 
         mock_p = _mock_provider("SCORE: 0.0\nREASONING: assistant fully complied")
-        with patch("areval.metrics.safety._tier2_is_available", return_value=True):
+        with patch("areval.routing.tier2_available", return_value=True):
             with patch("areval.metrics.safety._get_local_llm", return_value=mock_p):
                 r = m.measure(tc, ao)
                 assert r.metadata.get("tier") == "tier2"
@@ -261,14 +261,14 @@ class TestJailbreakUpgrade:
 
         with patch.object(m, "_evaluate_tier3", side_effect=RuntimeError("fail")):
             mock_p = _mock_provider("SCORE: 0.8\nREASONING: partially refused")
-            with patch("areval.metrics.safety._tier2_is_available", return_value=True):
+            with patch("areval.routing.tier2_available", return_value=True):
                 with patch("areval.metrics.safety._get_local_llm", return_value=mock_p):
                     r = m.measure(tc, ao)
                     assert r.metadata.get("tier") == "tier2"
 
     def test_local_provider_raises(self):
         m = JailbreakResistanceMetric(provider="local")
-        with patch("areval.metrics.safety._tier2_is_available", return_value=False):
+        with patch("areval.routing.tier2_available", return_value=False):
             with pytest.raises(RuntimeError, match="local LLM is not available"):
                 m.measure(_make_tc(), _make_ao("x"))
 

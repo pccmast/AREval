@@ -12,12 +12,12 @@ Three-tier support:
 
 from __future__ import annotations
 
-import os
 import re
 from typing import Any, List, Optional, Set
 
 from areval.config import log_degradation
 from areval.metrics.base import Metric, MetricResult
+from areval.routing import router
 from areval.test_case import TestCase, AgentOutput
 
 
@@ -375,22 +375,18 @@ class TaskCompletionMetric(Metric):
             },
         )
 
-    def _tier2_available(self) -> bool:
-        from areval.providers.local_llm import LocalLLMProvider as P
-        return P(base_url=self._local_url, model=self._local_model).is_available()
-
     # -- measure ---------------------------------------------------------------
 
     def measure(self, test_case: TestCase, agent_output: AgentOutput) -> MetricResult:
-        # mock → straight to Tier 1
-        if self.provider == "mock":
-            return self._evaluate_deterministic(test_case, agent_output)
-
         # deterministic mode → always Tier 1
         if self.mode == "deterministic":
             return self._evaluate_deterministic(test_case, agent_output)
 
-        # open_ended / trajectory → Tier 3, fallback to T2 → T1
+        # open_ended / trajectory → route by task name
+        task_name = (
+            "trajectory_evaluation" if self.mode == "trajectory"
+            else "task_completion_open"
+        )
         rubric = _TRAJECTORY_RUBRIC if self.mode == "trajectory" else _OPEN_ENDED_RUBRIC
         extra: dict[str, Any] | None = None
 
@@ -398,33 +394,11 @@ class TaskCompletionMetric(Metric):
             trajectory = agent_output.metadata.get("trajectory", "")
             extra = {"trajectory": trajectory}
 
-        # llm → Tier 3 or raise
-        if self.provider == "llm":
-            if not os.environ.get("OPENAI_API_KEY"):
-                raise RuntimeError("provider='llm' but no OPENAI_API_KEY is set")
+        tier = router.resolve(task_name, provider=self.provider)
+
+        if tier == "tier3":
             return self._evaluate_with_llm(test_case, agent_output, rubric, extra)
-
-        # local → Tier 2 or raise
-        if self.provider == "local":
-            if self._tier2_available():
-                # For TaskCompletion, Tier 2 is still via LLMJudge but uses local
-                # Actually, let's just fallback to deterministic since TaskCompletion
-                # doesn't have a specialized Tier 2 prompt — the semantic
-                # understanding requires Tier 3. But provide it anyway.
-                log_degradation("3", "1", "Tier 2 not specialized for TaskCompletion, using deterministic")
-                return self._evaluate_deterministic(test_case, agent_output)
-            raise RuntimeError("provider='local' but local LLM is not available")
-
-        # auto: Tier 3 → Tier 2 → Tier 1
-        if os.environ.get("OPENAI_API_KEY"):
-            try:
-                return self._evaluate_with_llm(test_case, agent_output, rubric, extra)
-            except Exception as exc:
-                log_degradation("3", "2", f"Tier 3 failed: {exc}")
-
-        if self._tier2_available():
-            log_degradation("3", "1", "Tier 2 not specialized, using deterministic")
+        if tier == "tier2":
+            log_degradation("3", "1", "Tier 2 not specialized for TaskCompletion, using deterministic")
             return self._evaluate_deterministic(test_case, agent_output)
-
-        log_degradation("3", "1", "No LLM available, using deterministic")
         return self._evaluate_deterministic(test_case, agent_output)

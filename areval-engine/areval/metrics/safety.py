@@ -18,13 +18,14 @@ Metrics provided:
 
 from __future__ import annotations
 
-import os
+import json
 import random
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from areval.config import log_degradation
 from areval.metrics.base import Metric, MetricResult
+from areval.routing import router
 from areval.test_case import TestCase, AgentOutput
 
 
@@ -128,13 +129,6 @@ REASONING: <detailed analysis of the assistant's behaviour>
 # ============================================================================
 # Tier-2 local-LLM helpers
 # ============================================================================
-
-def _tier2_is_available(local_url: Optional[str] = None,
-                        local_model: Optional[str] = None) -> bool:
-    """Check if LocalLLMProvider is reachable."""
-    from areval.providers.local_llm import LocalLLMProvider as P
-    return P(base_url=local_url, model=local_model).is_available()
-
 
 def _get_local_llm(local_url: Optional[str] = None,
                    local_model: Optional[str] = None):
@@ -270,28 +264,16 @@ class InjectionResistanceMetric(Metric):
     # -- main entry -----------------------------------------------------------
 
     def measure(self, test_case: TestCase, agent_output: AgentOutput) -> MetricResult:
-        if self.provider == "mock":
-            return self._evaluate_tier1(test_case, agent_output)
-
-        if self.provider == "local":
-            if _tier2_is_available(self._local_url, self._local_model):
-                return self._evaluate_tier2(test_case, agent_output)
-            raise RuntimeError("provider='local' but local LLM is not available")
-
         if self.provider == "llm":
             raise RuntimeError(
                 "InjectionResistance does not support provider='llm'. "
                 "Use 'auto', 'local', or 'mock'."
             )
 
-        # auto: Tier 2 → Tier 1
-        if _tier2_is_available(self._local_url, self._local_model):
-            try:
-                return self._evaluate_tier2(test_case, agent_output)
-            except Exception as exc:
-                log_degradation("2", "1", f"Tier 2 failed: {exc}")
+        tier = router.resolve("injection_resistance", provider=self.provider)
 
-        log_degradation("2", "1", "Local LLM unavailable, using keyword fallback")
+        if tier == "tier2":
+            return self._evaluate_tier2(test_case, agent_output)
         return self._evaluate_tier1(test_case, agent_output)
 
     # -- Attack-case generation (preserved) -----------------------------------
@@ -465,28 +447,16 @@ class HarmfulContentMetric(Metric):
     # -- main entry -----------------------------------------------------------
 
     def measure(self, test_case: TestCase, agent_output: AgentOutput) -> MetricResult:
-        if self.provider == "mock":
-            return self._evaluate_tier1(test_case, agent_output)
-
-        if self.provider == "local":
-            if _tier2_is_available(self._local_url, self._local_model):
-                return self._evaluate_tier2(test_case, agent_output)
-            raise RuntimeError("provider='local' but local LLM is not available")
-
         if self.provider == "llm":
             raise RuntimeError(
                 "HarmfulContent does not support provider='llm'. "
                 "Use 'auto', 'local', or 'mock'."
             )
 
-        # auto: Tier 2 → Tier 1
-        if _tier2_is_available(self._local_url, self._local_model):
-            try:
-                return self._evaluate_tier2(test_case, agent_output)
-            except Exception as exc:
-                log_degradation("2", "1", f"Tier 2 failed: {exc}")
+        tier = router.resolve("harmful_content", provider=self.provider)
 
-        log_degradation("2", "1", "Local LLM unavailable, using keyword fallback")
+        if tier == "tier2":
+            return self._evaluate_tier2(test_case, agent_output)
         return self._evaluate_tier1(test_case, agent_output)
 
 
@@ -646,36 +616,22 @@ class JailbreakResistanceMetric(Metric):
     # -- main entry -----------------------------------------------------------
 
     def measure(self, test_case: TestCase, agent_output: AgentOutput) -> MetricResult:
-        # mock → Tier 1
-        if self.provider == "mock":
-            return self._evaluate_tier1(test_case, agent_output)
+        tier = router.resolve("jailbreak_resistance", provider=self.provider)
 
-        # local → Tier 2 or raise
-        if self.provider == "local":
-            if _tier2_is_available(self._local_url, self._local_model):
-                return self._evaluate_tier2(test_case, agent_output)
-            raise RuntimeError("provider='local' but local LLM is not available")
-
-        # llm → Tier 3 or raise
-        if self.provider == "llm":
-            if not os.environ.get("OPENAI_API_KEY"):
-                raise RuntimeError("provider='llm' but no OPENAI_API_KEY is set")
-            return self._evaluate_tier3(test_case, agent_output)
-
-        # auto: Tier 3 → Tier 2 → Tier 1
-        if os.environ.get("OPENAI_API_KEY"):
-            try:
-                return self._evaluate_tier3(test_case, agent_output)
-            except Exception as exc:
-                log_degradation("3", "2", f"Tier 3 failed: {exc}")
-
-        if _tier2_is_available(self._local_url, self._local_model):
+        if tier == "tier2":
             try:
                 return self._evaluate_tier2(test_case, agent_output)
             except Exception as exc:
                 log_degradation("2", "1", f"Tier 2 failed: {exc}")
-
-        log_degradation("2", "1", "No LLM available, using keyword fallback")
+        if tier == "tier3":
+            try:
+                return self._evaluate_tier3(test_case, agent_output)
+            except Exception as exc:
+                log_degradation("3", "2", f"Tier 3 failed: {exc}")
+                try:
+                    return self._evaluate_tier2(test_case, agent_output)
+                except Exception as exc2:
+                    log_degradation("2", "1", f"Tier 2 also failed: {exc2}")
         return self._evaluate_tier1(test_case, agent_output)
 
     # -- Attack-case generation (preserved) -----------------------------------

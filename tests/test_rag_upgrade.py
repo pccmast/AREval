@@ -170,9 +170,7 @@ class TestFaithfulnessMetric:
         tc = _make_test_case(context="ML is a branch of AI.")
         ao = _make_agent_output("ML means machine learning.")
 
-        with patch.object(
-            m, "_tier2_available", return_value=False
-        ):
+        with patch("areval.routing.tier2_available", return_value=False):
             result = m.measure(tc, ao)
             assert 0.0 <= result.score <= 1.0
             assert result.metadata.get("tier") == "tier1"
@@ -187,9 +185,7 @@ class TestFaithfulnessMetric:
             "1: SUPPORTED\n2: SUPPORTED\n"
         )
 
-        with patch.object(
-            m, "_tier2_available", return_value=True
-        ):
+        with patch("areval.routing.tier2_available", return_value=True):
             with patch(
                 "areval.providers.local_llm.LocalLLMProvider",
                 return_value=mock_provider,
@@ -209,7 +205,7 @@ class TestFaithfulnessMetric:
             "1: CONTRADICTED\n2: SUPPORTED\n"
         )
 
-        with patch.object(m, "_tier2_available", return_value=True):
+        with patch("areval.routing.tier2_available", return_value=True):
             with patch(
                 "areval.providers.local_llm.LocalLLMProvider",
                 return_value=mock_provider,
@@ -231,7 +227,7 @@ class TestFaithfulnessMetric:
         m = FaithfulnessMetric(provider="local")
         tc = _make_test_case()
         ao = _make_agent_output()
-        with patch.object(m, "_tier2_available", return_value=False):
+        with patch("areval.routing.tier2_available", return_value=False):
             with pytest.raises(RuntimeError, match="local LLM is not available"):
                 m.measure(tc, ao)
 
@@ -259,7 +255,7 @@ class TestFaithfulnessMetric:
             metadata={"tier": "tier3"},
         )
 
-        with patch.object(m, "_tier2_available", return_value=True):
+        with patch("areval.routing.tier2_available", return_value=True):
             with patch.object(m, "_evaluate_tier3", return_value=fake_t3_result):
                 result = m.measure(tc, ao)
                 assert result.metadata.get("tier") == "tier3"
@@ -280,7 +276,7 @@ class TestAnswerRelevanceMetric:
         tc = _make_test_case()
         ao = _make_agent_output("answer")
 
-        with patch.object(m, "_tier2_available", return_value=False):
+        with patch("areval.routing.tier2_available", return_value=False):
             result = m.measure(tc, ao)
             assert result.metadata.get("tier") == "tier1"
 
@@ -291,7 +287,7 @@ class TestAnswerRelevanceMetric:
 
         mock_provider = _mock_local_provider("RELEVANT")
 
-        with patch.object(m, "_tier2_available", return_value=True):
+        with patch("areval.routing.tier2_available", return_value=True):
             with patch(
                 "areval.providers.local_llm.LocalLLMProvider",
                 return_value=mock_provider,
@@ -307,7 +303,7 @@ class TestAnswerRelevanceMetric:
 
         mock_provider = _mock_local_provider("NOT_RELEVANT")
 
-        with patch.object(m, "_tier2_available", return_value=True):
+        with patch("areval.routing.tier2_available", return_value=True):
             with patch(
                 "areval.providers.local_llm.LocalLLMProvider",
                 return_value=mock_provider,
@@ -327,7 +323,7 @@ class TestAnswerRelevanceMetric:
         m = AnswerRelevanceMetric(provider="local")
         tc = _make_test_case()
         ao = _make_agent_output()
-        with patch.object(m, "_tier2_available", return_value=False):
+        with patch("areval.routing.tier2_available", return_value=False):
             with pytest.raises(RuntimeError, match="local LLM is not available"):
                 m.measure(tc, ao)
 
@@ -346,7 +342,7 @@ class TestContextPrecisionMetric:
         tc = _make_test_case(context="ML is AI.")
         ao = _make_agent_output()
 
-        with patch.object(m, "_tier2_available", return_value=False):
+        with patch("areval.routing.tier2_available", return_value=False):
             result = m.measure(tc, ao)
             assert result.metadata.get("tier") == "tier1"
 
@@ -360,7 +356,7 @@ class TestContextPrecisionMetric:
 
         mock_provider = _mock_local_provider("RELEVANT")
 
-        with patch.object(m, "_tier2_available", return_value=True):
+        with patch("areval.routing.tier2_available", return_value=True):
             with patch(
                 "areval.providers.local_llm.LocalLLMProvider",
                 return_value=mock_provider,
@@ -379,7 +375,7 @@ class TestContextPrecisionMetric:
 
         mock_provider = _mock_local_provider("NOT_RELEVANT")
 
-        with patch.object(m, "_tier2_available", return_value=True):
+        with patch("areval.routing.tier2_available", return_value=True):
             with patch(
                 "areval.providers.local_llm.LocalLLMProvider",
                 return_value=mock_provider,
@@ -399,7 +395,7 @@ class TestContextPrecisionMetric:
         m = ContextPrecisionMetric(provider="local")
         tc = _make_test_case()
         ao = _make_agent_output()
-        with patch.object(m, "_tier2_available", return_value=False):
+        with patch("areval.routing.tier2_available", return_value=False):
             with pytest.raises(RuntimeError, match="local LLM is not available"):
                 m.measure(tc, ao)
 
