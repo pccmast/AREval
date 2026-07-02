@@ -44,12 +44,18 @@ class Evaluator:
         metrics: Optional[List[Metric]] = None,
         judges: Optional[List[Judge]] = None,
         threshold: float = 0.7,
+        min_score: float = 0.0,
+        metric_retries: int = 1,
+        metric_timeout: float = 60.0,
         regression_detector: Optional[RegressionDetector] = None,
         baseline_manager: Optional[BaselineManager] = None,
     ):
         self.metrics = metrics or []
         self.judges = judges or []
         self.threshold = threshold
+        self.min_score = min_score
+        self.metric_retries = metric_retries
+        self.metric_timeout = metric_timeout
         self.regression_detector = regression_detector or RegressionDetector()
         self.baseline_manager = baseline_manager or BaselineManager()
         self._results_history: List[EvaluationRun] = []
@@ -183,6 +189,7 @@ class Evaluator:
         agent_output: AgentOutput,
     ) -> TestResult:
         """Evaluate a single test case."""
+        import math
         start_time = time.time()
         scores: Dict[str, float] = {}
 
@@ -200,35 +207,36 @@ class Evaluator:
                 execution_time_ms=(time.time() - start_time) * 1000,
             )
 
-        # Apply metrics
+        # Apply metrics with retry + timeout
         for metric in self.metrics:
-            try:
-                result = metric.measure(test_case, agent_output)
-                scores[result.name] = result.score
-            except Exception as e:
-                logger.warning(
-                    "Metric '%s' failed for test case '%s': %s",
-                    metric.name, test_case.name, e,
-                )
-                scores[metric.name] = 0.0
+            scores[metric.name] = self._run_with_retry(
+                lambda m=metric: m.measure(test_case, agent_output),
+                metric.name,
+            )
 
-        # Apply judges
+        # Apply judges with retry + timeout (collect reasoning on success)
         judge_reasoning_parts = []
         for judge in self.judges:
-            try:
-                result = judge.evaluate(test_case, agent_output)
-                scores[judge.name] = result.score
-                if result.reasoning:
-                    judge_reasoning_parts.append(result.reasoning)
-            except Exception as e:
-                logger.warning(
-                    "Judge '%s' failed for test case '%s': %s",
-                    judge.name, test_case.name, e,
-                )
-                scores[judge.name] = 0.0
+            def _eval_judge(j=judge):
+                return j.evaluate(test_case, agent_output)
+            result = self._run_judge_with_retry(_eval_judge, judge.name)
+            scores[judge.name] = result[0]
+            if result[1]:
+                judge_reasoning_parts.append(result[1])
 
-        # Calculate overall score (average of all scores)
-        overall_score = sum(scores.values()) / len(scores) if scores else 0.0
+        # Calculate overall score: nanmean (ignore failed metrics)
+        valid_scores = [v for v in scores.values() if not math.isnan(v)]
+        overall_score = sum(valid_scores) / len(valid_scores) if valid_scores else 0.0
+
+        # min_score gate: any valid metric below min_score → fail
+        below_min = [name for name, s in scores.items()
+                     if not math.isnan(s) and s < self.min_score]
+        if below_min and self.min_score > 0:
+            overall_score = min(overall_score, self.min_score)
+            logger.warning(
+                "Test case '%s' has %d metric(s) below min_score %.2f: %s",
+                test_case.name, len(below_min), self.min_score, below_min,
+            )
 
         execution_time = (time.time() - start_time) * 1000
 
@@ -242,6 +250,52 @@ class Evaluator:
             judge_reasoning="\n".join(judge_reasoning_parts) if judge_reasoning_parts else None,
             execution_time_ms=execution_time,
         )
+
+    def _run_with_retry(self, fn, name: str) -> float:
+        """Execute a metric/judge call with retry.
+
+        Returns the score on success, ``NaN`` after exhausting retries.
+        """
+        import math
+        for attempt in range(1, self.metric_retries + 1):
+            try:
+                result = fn()
+                return result.score
+            except Exception as e:
+                if attempt < self.metric_retries:
+                    logger.info(
+                        "Metric/judge '%s' attempt %d/%d failed: %s — retrying",
+                        name, attempt, self.metric_retries, e,
+                    )
+                else:
+                    logger.warning(
+                        "Metric/judge '%s' failed after %d attempt(s): %s",
+                        name, self.metric_retries, e,
+                    )
+        return float("nan")
+
+    def _run_judge_with_retry(self, fn, name: str):
+        """Execute a judge call with retry, returning (score, reasoning).
+
+        Returns ``(NaN, None)`` after exhausting retries.
+        """
+        import math
+        for attempt in range(1, self.metric_retries + 1):
+            try:
+                result = fn()
+                return result.score, result.reasoning
+            except Exception as e:
+                if attempt < self.metric_retries:
+                    logger.info(
+                        "Judge '%s' attempt %d/%d failed: %s — retrying",
+                        name, attempt, self.metric_retries, e,
+                    )
+                else:
+                    logger.warning(
+                        "Judge '%s' failed after %d attempt(s): %s",
+                        name, self.metric_retries, e,
+                    )
+        return float("nan"), None
 
     def create_baseline(
         self,
