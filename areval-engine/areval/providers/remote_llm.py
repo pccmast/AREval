@@ -15,7 +15,7 @@ import logging
 import os
 from typing import Any, Optional
 
-from areval.providers.base import RemoteLLMProvider
+from areval.providers.base import RemoteLLMProvider as _BaseRemoteLLMProvider
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ DEFAULT_TIMEOUT = 60.0       # Matches existing LLMJudge default
 DEFAULT_MAX_RETRIES = 3      # Matches existing LLMJudge default
 
 
-class RemoteLLMProvider(RemoteLLMProvider):
+class RemoteLLMProvider(_BaseRemoteLLMProvider):
     """Unified remote LLM API client (OpenAI / Anthropic / custom).
 
     **Design constraint (ADR-1 / 4.2)**:

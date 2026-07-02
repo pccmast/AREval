@@ -140,5 +140,5 @@ class SqliteStore(EvaluationStore):
     @staticmethod
     def _row_to_run(row: _RunRow) -> EvaluationRun:
         """Reconstruct an EvaluationRun from an ORM row."""
-        data = json.loads(row.payload_json)
+        data = json.loads(str(row.payload_json))
         return reconstruct_run(data)

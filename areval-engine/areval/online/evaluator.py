@@ -189,8 +189,8 @@ class OnlineEvaluator:
         # Judges
         for judge in self.judges:
             try:
-                r = judge.evaluate(test_case, agent_output)
-                scores[judge.name] = r.score
+                judge_result = judge.evaluate(test_case, agent_output)
+                scores[judge.name] = judge_result.score
             except Exception:
                 scores[judge.name] = 0.0
 

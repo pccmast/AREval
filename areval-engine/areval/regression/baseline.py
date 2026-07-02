@@ -147,8 +147,8 @@ class BaselineManager:
             "baseline_id": baseline.id,
             "baseline_name": baseline.name,
             "comparisons": comparisons,
-            "avg_delta": sum(c["delta"] for c in comparisons) / len(comparisons) if comparisons else 0,
-            "regressed_count": sum(1 for c in comparisons if c["regressed"]),
+            "avg_delta": sum(float(c["delta"]) for c in comparisons) / len(comparisons) if comparisons else 0,  # type: ignore[arg-type, misc]
+            "regressed_count": sum(1 for c in comparisons if c["regressed"]),  # type: ignore[misc]
         }
 
     def _save(self, baseline: Baseline) -> None:

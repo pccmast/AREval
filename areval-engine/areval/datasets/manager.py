@@ -213,7 +213,7 @@ class DatasetManager:
 
     def create_from_traces(
         self,
-        tracer: "EvalTracer",
+        tracer: Any,  # EvalTracer – forward reference kept as Any until module is imported
         name: str,
         description: str = "",
         config: Optional[Any] = None,

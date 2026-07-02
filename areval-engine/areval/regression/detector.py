@@ -130,7 +130,7 @@ class RegressionDetector:
             )
 
             report.confidence = 1.0 - report.p_value
-            report.affected_tests = [a["test_id"] for a in affected]
+            report.affected_tests = [str(a["test_id"]) for a in affected]
             report.details = affected
 
         return report
