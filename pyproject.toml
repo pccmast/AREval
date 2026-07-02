@@ -83,7 +83,7 @@ warn_return_any = true
 warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
-module = "numpy.*"
+module = "numpy"
 ignore_errors = true
 
 [tool.basedpyright]
