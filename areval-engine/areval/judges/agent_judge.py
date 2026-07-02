@@ -7,6 +7,7 @@ Inspired by Zhuge et al. 2025 and emerging agent evaluation research.
 import ast
 import math
 import operator
+import os
 import re
 from typing import Any, Callable, Dict, List, Optional
 
@@ -240,13 +241,24 @@ class AgentJudge(Judge):
         """Execute a tool for factual verification.
 
         Looks up the tool in the global registry.  The built-in 'calculator'
-        tool safely evaluates mathematical expressions using ast.NodeVisitor;
-        'search' and 'code_executor' return simulated results (their docstrings
-        explain what a production implementation would do).
+        tool safely evaluates mathematical expressions using ast.NodeVisitor.
+
+        Non-calculator tools (search, code_executor) are simulated by default
+        to keep tests deterministic and avoid invoking host binaries or
+        network calls in CI.  Set ``AREVAL_SIMULATE_TOOLS=0`` to use real
+        tools when needed.
         """
         tool_fn = _TOOL_REGISTRY.get(tool_name)
         if tool_fn is None:
             return f"[Tool not found: {tool_name}]"
+
+        # Determine whether to simulate non-calculator tools.
+        # Default (or AREVAL_SIMULATE_TOOLS=1): simulated, deterministic.
+        # AREVAL_SIMULATE_TOOLS=0: invoke real tools.
+        simulate = os.getenv("AREVAL_SIMULATE_TOOLS", "1") != "0"
+        if simulate and tool_name.lower() != "calculator":
+            return f"Simulated {tool_name} results for query: {query}"
+
         try:
             return tool_fn(query)
         except Exception as e:
