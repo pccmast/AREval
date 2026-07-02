@@ -190,14 +190,21 @@ class EvalTracer:
     # ------------------------------------------------------------------
 
     def start_conversation(self, conv_id: Optional[str] = None) -> str:
-        """Begin a multi-turn conversation.
+        """Begin (or switch to) a multi-turn conversation.
 
         Subsequent :meth:`start_span` calls will automatically inherit the
         *conversation_id* and increment the *turn_index*.
 
+        Idempotent when called with the same *conv_id* repeatedly — turn
+        counter is preserved so long-running conversations don't reset.
+
         Returns the *conv_id* so it can be stored on the caller side.
         """
         cid = conv_id or f"conv-{uuid.uuid4().hex[:8]}"
+        if self._active_conversation == cid:
+            return cid  # already active — no-op, preserve turn counter
+        if self._active_conversation:
+            self.end_conversation()
         self._active_conversation = cid
         self._conversation_turn = 0
         self._conversations.setdefault(cid, [])

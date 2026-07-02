@@ -38,7 +38,11 @@ def handle(msg, conversation_id):
 #      每个 Agent 都要手动管理 tracer 生命周期
 ```
 
-### 优化方案：`conversation_id` 从请求上下文自动提取
+### 优化方案：`conversation_id` 从请求上下文自动提取 ✅ 已实现
+
+**实现**：`areval-sdk/areval_sdk/decorators.py` — `@eval_trace` 新增 `conversation_id_extractor` 参数，并自动从 kwargs 中探测 `conversation_id` / `conv_id` / `session_id`。`start_conversation()` 幂等——相同 conv_id 重复调用不重置 turn 计数器。
+
+**三种使用方式**：
 
 ```python
 # areval-sdk/areval_sdk/decorators.py
@@ -88,11 +92,9 @@ def handle(msg: str) -> str: ...
 ### 改动量评估
 
 ```
-areval-sdk/areval_sdk/decorators.py:  +20 行（conversation_id 自动提取逻辑）
-areval-engine/areval/tracing/tracer.py: +5 行（start_conversation 幂等检查）
-tests/test_tracing.py:                 +10 行（多轮 conv_id 自动提取测试）
-
-总计: ~35 行，0.5h
+✅ 已实现 (areval-sdk/areval_sdk/decorators.py + areval-engine/areval/tracing/tracer.py)
+  +~30 行（conversation_id 自动提取 + 幂等检查）
+  262 tests pass
 ```
 
 ### 推荐

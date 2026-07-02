@@ -31,14 +31,30 @@ def eval_trace(
     attributes: Optional[dict[str, Any]] = None,
     new_conversation: bool = False,
     conversation_id: Optional[str] = None,
+    conversation_id_extractor: Optional[Callable[..., Optional[str]]] = None,
 ) -> Callable[..., Any]:
     """Decorator to trace agent function execution.
 
     Captures latency, input/output, and custom attributes.
     Integrates with the evaluation tracing system.
 
-    Multi-turn: set *new_conversation=True* to start a conversation session;
-    subsequent calls automatically advance the turn index.
+    Multi-turn conversations — three usage levels:
+
+    1. Auto-detect from kwargs (zero config):
+       If your function accepts ``conversation_id``, ``conv_id``, or
+       ``session_id``, the decorator extracts it automatically and
+       manages conversation boundaries.
+
+       @eval_trace()
+       def handle(msg: str, conversation_id: str) -> str: ...
+
+    2. Custom extractor:
+       @eval_trace(conversation_id_extractor=lambda a, kw: kw["meta"]["cid"])
+       def handle(msg: str, meta: dict) -> str: ...
+
+    3. Manual control (backward compatible):
+       @eval_trace(new_conversation=True)
+       def handle(msg: str) -> str: ...
 
     Example:
         @eval_trace(name="search_agent")
@@ -51,10 +67,35 @@ def eval_trace(
             span_name = name or func.__name__
             span_attrs = attributes or {}
 
+            # ── Multi-turn conversation management ──
+            cid: Optional[str] = None
+
+            # Level 1: explicit override (highest priority)
             if new_conversation:
-                _tracer.start_conversation(conversation_id)
-            elif conversation_id:
-                _tracer.start_conversation(conversation_id)
+                cid = conversation_id
+
+            # Level 2: auto-detect from runtime kwargs
+            if cid is None:
+                if conversation_id_extractor:
+                    try:
+                        cid = conversation_id_extractor(args, kwargs)
+                    except Exception:
+                        pass
+                else:
+                    # Common parameter names for conversation/session
+                    for key in ("conversation_id", "conv_id", "session_id"):
+                        if key in kwargs:
+                            cid = str(kwargs[key])
+                            break
+
+            # Level 3: explicit static conversation_id (fallback)
+            if cid is None and conversation_id:
+                cid = conversation_id
+
+            # Switch conversation if cid changed
+            if cid is not None:
+                if _tracer._active_conversation != cid:
+                    _tracer.start_conversation(cid)
 
             if capture_input:
                 span_attrs["input.args"] = str(args)[:500]
