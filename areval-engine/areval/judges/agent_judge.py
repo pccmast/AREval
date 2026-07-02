@@ -14,7 +14,6 @@ from typing import Any, Callable, Dict, List, Optional
 from areval.judges.base import Judge, JudgeResult
 from areval.test_case import TestCase, AgentOutput
 
-
 # ---------------------------------------------------------------------------
 # Safe calculator (ast.NodeVisitor)
 # ---------------------------------------------------------------------------
@@ -217,7 +216,7 @@ class AgentJudge(Judge):
     _MATH_PATTERNS = [
         re.compile(p)
         for p in [
-            r"\b\d+\s*[\+\-\*\/\*\*]\s*\d+\b",   # 2+2, 10 * 3
+            r"\b\d+\s*[\+\-\*\/\*\*]\s*\d+\b",  # 2+2, 10 * 3
             r"\b\d+\s*(?:equals?|is|makes?|total|sum)\s*\d+\b",  # equals 4
             r"\b(?:sqrt|abs|round|min|max|log|sin|cos|tan)\s*\(",  # sqrt(16)
             r"\b\d+\s*(?:plus|minus|times?|divided by|multiplied by)\s*\d+\b",
@@ -300,18 +299,23 @@ class AgentJudge(Judge):
                 # Any substantive claim is worth searching
                 result = self._execute_tool("search", claim)
                 tool_used = "search"
-            elif any(kw in claim.lower() for kw in ["code", "script", "function", "def ", "import", "run"]):
+            elif any(
+                kw in claim.lower()
+                for kw in ["code", "script", "function", "def ", "import", "run"]
+            ):
                 if "code_executor" in self.tools:
                     result = self._execute_tool("code_executor", claim)
                     tool_used = "code_executor"
 
             if result is not None:
-                verification_results.append({
-                    "claim": claim,
-                    "expression": expr if tool_used == "calculator" else None,
-                    "tool": tool_used,
-                    "result": result,
-                })
+                verification_results.append(
+                    {
+                        "claim": claim,
+                        "expression": expr if tool_used == "calculator" else None,
+                        "tool": tool_used,
+                        "result": result,
+                    }
+                )
 
         # Step 3: Assess overall quality
         score = self._assess_quality(test_case, agent_output, verification_results)
@@ -323,9 +327,7 @@ class AgentJudge(Judge):
             reasoning=reasoning,
             criteria_scores={
                 "factual_accuracy": score,
-                "claim_verification": (
-                    1.0 if verification_results else 0.5
-                ),
+                "claim_verification": (1.0 if verification_results else 0.5),
             },
             threshold=self.threshold,
             metadata={
@@ -347,11 +349,7 @@ class AgentJudge(Judge):
         sentences = re.split(r"[.!?\n]+", text)
         cleaned = [s.strip() for s in sentences if s.strip()]
         # Keep sentences that are long enough OR contain math patterns
-        factual = [
-            s
-            for s in cleaned
-            if len(s) >= 10 or self._is_math_claim(s)
-        ]
+        factual = [s for s in cleaned if len(s) >= 10 or self._is_math_claim(s)]
         return factual[:5]
 
     def _assess_quality(
@@ -406,8 +404,6 @@ REASONING: <one sentence>
                 tool = v.get("tool", "unknown")
                 res = v.get("result", "")
                 claim_short = v.get("claim", "")[:50]
-                parts.append(
-                    f"Verified claim '{claim_short}...' using {tool}: {res}."
-                )
+                parts.append(f"Verified claim '{claim_short}...' using {tool}: {res}.")
         parts.append(f"Overall quality score: {score:.2f}")
         return " ".join(parts)

@@ -10,11 +10,10 @@ Inspired by DeepEval's DAG metric.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, List, Optional
 
 from areval.judges.base import Judge, JudgeResult
 from areval.test_case import TestCase, AgentOutput
-
 
 # ---------------------------------------------------------------------------
 # Node types
@@ -139,9 +138,9 @@ class DAGJudge(Judge):
 
         # Apply child verdict weights
         if node.children:
-            weighted_score = sum(
-                (v.weight * score) for v in node.children
-            ) / sum(v.weight for v in node.children)
+            weighted_score = sum((v.weight * score) for v in node.children) / sum(
+                v.weight for v in node.children
+            )
             return weighted_score, result.reasoning or "LLM-based DAG evaluation"
 
         return score, result.reasoning or "LLM-based DAG evaluation"
@@ -171,18 +170,14 @@ class DAGJudge(Judge):
 
         total_weight = sum(weights)
         avg_score = (
-            sum(s * w for s, w in zip(scores, weights)) / total_weight
-            if total_weight > 0
-            else 0.0
+            sum(s * w for s, w in zip(scores, weights)) / total_weight if total_weight > 0 else 0.0
         )
 
         return JudgeResult(
             score=avg_score,
             reasoning=" | ".join(reasonings),
             threshold=self.threshold,
-            criteria_scores={
-                node.criterion: s for node, s in zip(self.root_nodes, scores)
-            },
+            criteria_scores={node.criterion: s for node, s in zip(self.root_nodes, scores)},
             metadata={
                 "node_scores": scores,
                 "node_weights": weights,
@@ -194,6 +189,7 @@ class DAGJudge(Judge):
 # ---------------------------------------------------------------------------
 # Rubric helpers
 # ---------------------------------------------------------------------------
+
 
 def _criterion_rubric(criterion: str) -> str:
     """Build a concise LLM evaluation rubric from a criterion string."""

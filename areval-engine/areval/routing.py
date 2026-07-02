@@ -24,23 +24,20 @@ from areval.config import log_degradation
 # ---------------------------------------------------------------------------
 DEFAULT_TASK_ROUTING: dict[str, str] = {
     # === RAG ===
-    "context_precision":     "tier2",   # qwen3-1.7b binary classification
-    "answer_relevance":      "tier2",   # qwen3-1.7b binary classification
-    "faithfulness":          "tier2",   # qwen3-1.7b sentence-by-sentence
-    "faithfulness_complex":  "tier3",   # remote LLM (long-text > 2000 chars)
-
+    "context_precision": "tier2",  # qwen3-1.7b binary classification
+    "answer_relevance": "tier2",  # qwen3-1.7b binary classification
+    "faithfulness": "tier2",  # qwen3-1.7b sentence-by-sentence
+    "faithfulness_complex": "tier3",  # remote LLM (long-text > 2000 chars)
     # === Safety ===
-    "injection_resistance":  "tier2",   # qwen3-1.7b refusal detection
-    "harmful_content":       "tier2",   # qwen3-1.7b multi-label classification
-    "jailbreak_resistance":  "tier3",   # remote LLM (complex reasoning chains)
-
+    "injection_resistance": "tier2",  # qwen3-1.7b refusal detection
+    "harmful_content": "tier2",  # qwen3-1.7b multi-label classification
+    "jailbreak_resistance": "tier3",  # remote LLM (complex reasoning chains)
     # === Agent ===
-    "tool_call_semantic":    "tier2",   # qwen3-1.7b semantic matching
-    "task_completion_det":   "tier1",   # pure code (output-length heuristic)
-    "task_completion_open":  "tier3",   # remote LLM (open-ended judgement)
-
+    "tool_call_semantic": "tier2",  # qwen3-1.7b semantic matching
+    "task_completion_det": "tier1",  # pure code (output-length heuristic)
+    "task_completion_open": "tier3",  # remote LLM (open-ended judgement)
     # === Other ===
-    "trajectory_evaluation": "tier3",   # remote LLM (complex trajectory analysis)
+    "trajectory_evaluation": "tier3",  # remote LLM (complex trajectory analysis)
 }
 
 
@@ -51,8 +48,7 @@ DEFAULT_TASK_ROUTING: dict[str, str] = {
 _tier2_available_cache: Optional[bool] = None
 
 
-def tier2_available(local_url: Optional[str] = None,
-                    local_model: Optional[str] = None) -> bool:
+def tier2_available(local_url: Optional[str] = None, local_model: Optional[str] = None) -> bool:
     """Check whether the local LLM (qwen3-1.7b via Ollama / LM Studio)
     is reachable.  Result is cached for the lifetime of the process.
     """
@@ -109,15 +105,11 @@ class TaskRouter:
             return "tier1"
         if provider == "local":
             if not tier2_available():
-                raise RuntimeError(
-                    "provider='local' but local LLM is not available"
-                )
+                raise RuntimeError("provider='local' but local LLM is not available")
             return "tier2"
         if provider == "llm":
             if not tier3_available():
-                raise RuntimeError(
-                    "provider='llm' but no OPENAI_API_KEY is set"
-                )
+                raise RuntimeError("provider='llm' but no OPENAI_API_KEY is set")
             return "tier3"
 
         # ---- auto: routing table + graceful degradation ----

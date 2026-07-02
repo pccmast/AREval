@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from areval.test_case import TestCase
-from areval.datasets.formats import load_jsonl, save_jsonl
+from areval.datasets.formats import load_jsonl
 
 
 @dataclass
@@ -72,8 +72,7 @@ class Dataset:
         authored seed datasets) are treated as approved.
         """
         return [
-            tc for tc in self.test_cases
-            if "approved" in tc.tags or "pending_review" not in tc.tags
+            tc for tc in self.test_cases if "approved" in tc.tags or "pending_review" not in tc.tags
         ]
 
     def pending_review_cases(self) -> List[TestCase]:
@@ -104,8 +103,7 @@ class Dataset:
         """Remove a pending_review case from the dataset."""
         before = len(self.test_cases)
         self.test_cases = [
-            tc for tc in self.test_cases
-            if not (tc.id == case_id and "pending_review" in tc.tags)
+            tc for tc in self.test_cases if not (tc.id == case_id and "pending_review" in tc.tags)
         ]
         if not self.pending_review_cases():
             self.tags = [t for t in self.tags if t != "pending_review"]

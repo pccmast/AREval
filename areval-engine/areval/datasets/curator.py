@@ -139,7 +139,8 @@ class TraceCurator:
 
         # 2. Filter
         candidates = [
-            a for a in all_analyses
+            a
+            for a in all_analyses
             if a.category in self.config.include_categories
             and a.value_score >= self.config.min_value_score
             and a.input_text
@@ -164,7 +165,7 @@ class TraceCurator:
 
         # 6. Convert (respect dynamic limit)
         effective_max = self._effective_max(len(candidates))
-        test_cases = [self._analysis_to_test_case(a) for a in candidates[: effective_max]]
+        test_cases = [self._analysis_to_test_case(a) for a in candidates[:effective_max]]
 
         # 7. Build Dataset
         tags = ["auto-curated"]
@@ -208,7 +209,8 @@ class TraceCurator:
             all_analyses.append(analysis)
 
         candidates = [
-            a for a in all_analyses
+            a
+            for a in all_analyses
             if a.category in self.config.include_categories
             and a.value_score >= self.config.min_value_score
             and a.input_text
@@ -216,7 +218,9 @@ class TraceCurator:
         candidates.sort(key=lambda a: a.value_score, reverse=True)
 
         effective_max = self._effective_max(len(candidates))
-        candidates = self._dedup(candidates, threshold=self.config.dedup_similarity, max_keep=effective_max)
+        candidates = self._dedup(
+            candidates, threshold=self.config.dedup_similarity, max_keep=effective_max
+        )
 
         for a in candidates:
             a.input_text = self._strip_pii(a.input_text or "")
@@ -258,8 +262,7 @@ class TraceCurator:
                     break
                 continue
             if any(
-                self._jaccard(text_a, self._tokenize(b.input_text or "")) >= threshold
-                for b in kept
+                self._jaccard(text_a, self._tokenize(b.input_text or "")) >= threshold for b in kept
             ):
                 continue
             kept.append(a)
@@ -316,10 +319,7 @@ class TraceCurator:
             r"申欧耿关兰芦俞]"
         )
         # Name pattern: surname + 1-2 chars (Chinese character range)
-        _cn_name_re = (
-            _CN_SURNAME
-            + r"[\u4e00-\u9fff]{1,2}(?=[\s，。！？、；：""''）】》\\]])"
-        )
+        _cn_name_re = _CN_SURNAME + r"[\u4e00-\u9fff]{1,2}(?=[\s，。！？、；：" "''）】》\\]])"
         text = re.sub(_cn_name_re, "[NAME]", text)
         # Address — province/city prefix + road/street/lane + number
         text = re.sub(
@@ -330,7 +330,9 @@ class TraceCurator:
         # QQ number (5-11 digits)
         text = re.sub(r"\b[1-9]\d{4,10}\b", "[QQ]", text)
         # WeChat ID (字母数字下划线减号组合)
-        text = re.sub(r"(?i)(?:weixin|wechat|wx|微信)[:：]?\s*[a-zA-Z][a-zA-Z0-9_-]{5,19}", "[WECHAT]", text)
+        text = re.sub(
+            r"(?i)(?:weixin|wechat|wx|微信)[:：]?\s*[a-zA-Z][a-zA-Z0-9_-]{5,19}", "[WECHAT]", text
+        )
         # Bank card number (16 or 19 digits)
         text = re.sub(r"\b\d{16}\b", "[BANK_CARD]", text)
         text = re.sub(r"\b\d{19}\b", "[BANK_CARD]", text)

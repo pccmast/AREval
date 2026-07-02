@@ -26,7 +26,6 @@ import hashlib
 import logging
 import queue
 import threading
-import time
 import warnings
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -76,7 +75,9 @@ class OnlineEvaluator:
         self.max_queue_size = max_queue_size
 
         # Async machinery
-        self._queue: queue.Queue[Optional[tuple[TestCase, AgentOutput]]] = queue.Queue(maxsize=max_queue_size)
+        self._queue: queue.Queue[Optional[tuple[TestCase, AgentOutput]]] = queue.Queue(
+            maxsize=max_queue_size
+        )
         self._worker_thread: Optional[threading.Thread] = None
         self._running = False
         if async_mode:
@@ -125,7 +126,9 @@ class OnlineEvaluator:
     def get_stats(self, window_minutes: int = 60) -> Dict[str, Any]:
         return self.storage.get_stats(window_minutes=window_minutes)
 
-    def get_trend(self, window_minutes: int = 1440, bucket_minutes: int = 60) -> List[Dict[str, Any]]:
+    def get_trend(
+        self, window_minutes: int = 1440, bucket_minutes: int = 60
+    ) -> List[Dict[str, Any]]:
         return self.storage.get_trend(
             window_minutes=window_minutes,
             bucket_minutes=bucket_minutes,
@@ -168,8 +171,8 @@ class OnlineEvaluator:
                     self.monitor.check()
             except Exception:
                 logger.exception(
-                    "OnlineEvaluator worker: unhandled error evaluating task "
-                    "(test_case=%r)", getattr(tc, 'name', 'unknown'),
+                    "OnlineEvaluator worker: unhandled error evaluating task " "(test_case=%r)",
+                    getattr(tc, "name", "unknown"),
                 )
             finally:
                 self._queue.task_done()

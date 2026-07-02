@@ -134,14 +134,16 @@ class BaselineManager:
         for result in results:
             baseline_score = baseline_map.get(result.test_case.id)
             if baseline_score is not None:
-                comparisons.append({
-                    "test_id": result.test_case.id,
-                    "test_name": result.test_case.name,
-                    "baseline_score": baseline_score,
-                    "current_score": result.overall_score,
-                    "delta": result.overall_score - baseline_score,
-                    "regressed": result.overall_score < baseline_score - delta_threshold,
-                })
+                comparisons.append(
+                    {
+                        "test_id": result.test_case.id,
+                        "test_name": result.test_case.name,
+                        "baseline_score": baseline_score,
+                        "current_score": result.overall_score,
+                        "delta": result.overall_score - baseline_score,
+                        "regressed": result.overall_score < baseline_score - delta_threshold,
+                    }
+                )
 
         return {
             "baseline_id": baseline.id,

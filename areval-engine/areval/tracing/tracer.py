@@ -10,7 +10,6 @@ import time
 import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any, Dict, List, Optional, Generator
 
 
@@ -25,8 +24,8 @@ class TraceSpan:
     span_id: str = field(default_factory=lambda: str(uuid.uuid4())[:16])
     trace_id: Optional[str] = None
     parent_id: Optional[str] = None
-    conversation_id: Optional[str] = None   # multi-turn conversation grouping
-    turn_index: int = 0                      # turn number within conversation
+    conversation_id: Optional[str] = None  # multi-turn conversation grouping
+    turn_index: int = 0  # turn number within conversation
     start_time: float = field(default_factory=time.time)
     end_time: Optional[float] = None
     status: str = "ok"  # ok, error
@@ -43,11 +42,13 @@ class TraceSpan:
         self.attributes[key] = value
 
     def add_event(self, name: str, attributes: Optional[Dict[str, Any]] = None) -> None:
-        self.events.append({
-            "name": name,
-            "timestamp": time.time(),
-            "attributes": attributes or {},
-        })
+        self.events.append(
+            {
+                "name": name,
+                "timestamp": time.time(),
+                "attributes": attributes or {},
+            }
+        )
 
     def finish(self, status: str = "ok") -> None:
         self.end_time = time.time()
@@ -170,7 +171,9 @@ class EvalTracer:
             "total_spans": total_spans,
             "error_spans": error_spans,
             "unique_traces": traces,
-            "avg_duration_ms": sum(s.duration_ms for s in self._spans) / total_spans if total_spans else 0,
+            "avg_duration_ms": (
+                sum(s.duration_ms for s in self._spans) / total_spans if total_spans else 0
+            ),
         }
 
     def get_all_traces(self) -> Dict[str, List[TraceSpan]]:

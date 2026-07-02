@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import os
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 # ---------------------------------------------------------------------------
@@ -74,8 +74,12 @@ def _probe_http(url: str, timeout: float = 0.5) -> bool:
 
         r = httpx.get(url, timeout=timeout, follow_redirects=False)
         return r.status_code < 500
-    except (httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError,
-            httpx.RemoteProtocolError):
+    except (
+        httpx.ConnectError,
+        httpx.TimeoutException,
+        httpx.NetworkError,
+        httpx.RemoteProtocolError,
+    ):
         return False
     except Exception:
         return False
@@ -198,18 +202,14 @@ def print_config(config: ProviderConfig) -> None:
     if config.tier2_enabled:
         url = config.local_llm_url or "auto-detect"
         model = config.local_llm_model or DEFAULT_LOCAL_MODEL
-        lines.append(
-            f"[AREval] Tier 2 (local LLM):  {model} @ {url}"
-        )
+        lines.append(f"[AREval] Tier 2 (local LLM):  {model} @ {url}")
     else:
         lines.append("[AREval] Tier 2 (local LLM):  disabled")
 
     if config.tier3_enabled:
         url = config.remote_llm_url or DEFAULT_OPENAI_URL
         model = config.remote_llm_model
-        lines.append(
-            f"[AREval] Tier 3 (remote LLM): {model} @ {url}"
-        )
+        lines.append(f"[AREval] Tier 3 (remote LLM): {model} @ {url}")
     else:
         lines.append("[AREval] Tier 3 (remote LLM): disabled")
 

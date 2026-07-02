@@ -21,7 +21,6 @@ from areval.metrics.base import Metric, MetricResult
 from areval.routing import router
 from areval.test_case import TestCase, AgentOutput
 
-
 # ============================================================================
 # Shared rubric templates (Tier-3 LLMJudge path — preserved unchanged)
 # ============================================================================
@@ -279,7 +278,8 @@ class FaithfulnessMetric(Metric):
         sentences = _split_sentences(answer)
         if not sentences:
             return MetricResult(
-                name=self.name, score=1.0,
+                name=self.name,
+                score=1.0,
                 reasoning="Empty answer — vacuously faithful",
                 threshold=self.threshold,
             )
@@ -292,19 +292,18 @@ class FaithfulnessMetric(Metric):
         )
 
         # Build batch prompt
-        numbered = "\n".join(
-            f"{i + 1}. {s}" for i, s in enumerate(sentences)
-        )
+        numbered = "\n".join(f"{i + 1}. {s}" for i, s in enumerate(sentences))
         prompt = _FAITHFULNESS_T2_BATCH_PROMPT.format(
-            context=context or "(none)", statements=numbered,
+            context=context or "(none)",
+            statements=numbered,
         )
         raw = llm.chat_complete(prompt)
         labels = _parse_faithfulness_batch(raw, len(sentences))
         results = list(zip(sentences, labels))
         score = _compute_faithfulness_score(results, self.neutral_weight)
 
-        supported = sum(1 for _, l in results if l == "SUPPORTED")
-        contradicted = sum(1 for _, l in results if l == "CONTRADICTED")
+        supported = sum(1 for _, label in results if label == "SUPPORTED")
+        contradicted = sum(1 for _, label in results if label == "CONTRADICTED")
 
         return MetricResult(
             name=self.name,
@@ -364,9 +363,7 @@ class FaithfulnessMetric(Metric):
 
     # -- main entry ------------------------------------------------------------
 
-    def measure(
-        self, test_case: TestCase, agent_output: AgentOutput
-    ) -> MetricResult:
+    def measure(self, test_case: TestCase, agent_output: AgentOutput) -> MetricResult:
         context = test_case.context or ""
         if not context:
             return MetricResult(
@@ -428,7 +425,8 @@ class AnswerRelevanceMetric(Metric):
 
         llm = LocalLLMProvider(base_url=self._local_url, model=self._local_model)
         prompt = _ANSWER_RELEVANCE_T2_PROMPT.format(
-            question=question, answer=answer,
+            question=question,
+            answer=answer,
         )
         raw = llm.chat_complete(prompt)
         score = _normalise_binary(raw)
@@ -441,9 +439,7 @@ class AnswerRelevanceMetric(Metric):
             metadata={"tier": "tier2", "model": self._local_model or "qwen3-1.7b"},
         )
 
-    def _evaluate_tier3(
-        self, test_case: TestCase, agent_output: AgentOutput
-    ) -> MetricResult:
+    def _evaluate_tier3(self, test_case: TestCase, agent_output: AgentOutput) -> MetricResult:
         from areval.judges.llm_judge import LLMJudge
 
         judge = LLMJudge(
@@ -459,9 +455,7 @@ class AnswerRelevanceMetric(Metric):
             metadata={"tier": "tier3", "judge_provider": judge.provider},
         )
 
-    def _evaluate_tier1(
-        self, test_case: TestCase, agent_output: AgentOutput
-    ) -> MetricResult:
+    def _evaluate_tier1(self, test_case: TestCase, agent_output: AgentOutput) -> MetricResult:
         from areval.judges.llm_judge import LLMJudge
 
         judge = LLMJudge(
@@ -480,15 +474,14 @@ class AnswerRelevanceMetric(Metric):
 
     # -- main entry ------------------------------------------------------------
 
-    def measure(
-        self, test_case: TestCase, agent_output: AgentOutput
-    ) -> MetricResult:
+    def measure(self, test_case: TestCase, agent_output: AgentOutput) -> MetricResult:
         question = test_case.input.strip()
         answer = agent_output.output
 
         if not question:
             return MetricResult(
-                name=self.name, score=1.0,
+                name=self.name,
+                score=1.0,
                 reasoning="Empty question — vacuously relevant",
                 threshold=self.threshold,
             )
@@ -539,7 +532,8 @@ class ContextPrecisionMetric(Metric):
 
         llm = LocalLLMProvider(base_url=self._local_url, model=self._local_model)
         prompt = _CONTEXT_PRECISION_T2_PROMPT.format(
-            question=question, context=context,
+            question=question,
+            context=context,
         )
         raw = llm.chat_complete(prompt)
         score = _normalise_binary(raw)
@@ -547,10 +541,7 @@ class ContextPrecisionMetric(Metric):
         return MetricResult(
             name=self.name,
             score=score,
-            reasoning=(
-                f"Tier-2 qwen3-1.7b: "
-                f"{'RELEVANT' if score > 0.5 else 'NOT_RELEVANT'}"
-            ),
+            reasoning=(f"Tier-2 qwen3-1.7b: " f"{'RELEVANT' if score > 0.5 else 'NOT_RELEVANT'}"),
             threshold=self.threshold,
             metadata={"tier": "tier2", "model": self._local_model or "qwen3-1.7b"},
         )
@@ -594,15 +585,14 @@ class ContextPrecisionMetric(Metric):
 
     # -- main entry ------------------------------------------------------------
 
-    def measure(
-        self, test_case: TestCase, agent_output: AgentOutput
-    ) -> MetricResult:
+    def measure(self, test_case: TestCase, agent_output: AgentOutput) -> MetricResult:
         context = test_case.context or ""
         question = test_case.input
 
         if not context:
             return MetricResult(
-                name=self.name, score=0.0,
+                name=self.name,
+                score=0.0,
                 reasoning="No context provided",
                 threshold=self.threshold,
             )

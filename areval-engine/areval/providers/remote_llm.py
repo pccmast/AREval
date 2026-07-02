@@ -22,8 +22,8 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Defaults
 # ---------------------------------------------------------------------------
-DEFAULT_TIMEOUT = 60.0       # Matches existing LLMJudge default
-DEFAULT_MAX_RETRIES = 3      # Matches existing LLMJudge default
+DEFAULT_TIMEOUT = 60.0  # Matches existing LLMJudge default
+DEFAULT_MAX_RETRIES = 3  # Matches existing LLMJudge default
 
 
 class RemoteLLMProvider(_BaseRemoteLLMProvider):
@@ -123,9 +123,7 @@ class RemoteLLMProvider(_BaseRemoteLLMProvider):
         target_url = self._base_url
         if not target_url:
             if self._provider == "openai":
-                target_url = os.environ.get(
-                    "AREVAL_LLM_BASE_URL", "https://api.openai.com/v1"
-                )
+                target_url = os.environ.get("AREVAL_LLM_BASE_URL", "https://api.openai.com/v1")
             elif self._provider == "anthropic":
                 target_url = "https://api.anthropic.com"
             else:
@@ -141,8 +139,12 @@ class RemoteLLMProvider(_BaseRemoteLLMProvider):
 
             r = httpx.get(url, timeout=timeout, follow_redirects=False)
             return r.status_code < 500
-        except (httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError,
-                httpx.RemoteProtocolError):
+        except (
+            httpx.ConnectError,
+            httpx.TimeoutException,
+            httpx.NetworkError,
+            httpx.RemoteProtocolError,
+        ):
             return False
         except Exception:
             return False
@@ -234,9 +236,7 @@ class RemoteLLMProvider(_BaseRemoteLLMProvider):
         """
         key = self._resolve_api_key()
         if not key:
-            raise ValueError(
-                f"No API key configured for provider={self._provider!r}"
-            )
+            raise ValueError(f"No API key configured for provider={self._provider!r}")
 
         if self._provider in ("openai", "custom"):
             return self._chat_openai(prompt, key)
@@ -246,7 +246,4 @@ class RemoteLLMProvider(_BaseRemoteLLMProvider):
         raise ValueError(f"Unsupported provider: {self._provider!r}")
 
     def __repr__(self) -> str:
-        return (
-            f"RemoteLLMProvider(provider={self._provider!r}, "
-            f"model={self._model!r})"
-        )
+        return f"RemoteLLMProvider(provider={self._provider!r}, " f"model={self._model!r})"

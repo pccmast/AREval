@@ -43,8 +43,8 @@ class AlertConfig:
 class Alert:
     """A single quality alert."""
 
-    alert_type: str          # "pass_rate_drop" | "score_drop" | "latency_spike"
-    severity: str             # "warning" | "critical"
+    alert_type: str  # "pass_rate_drop" | "score_drop" | "latency_spike"
+    severity: str  # "warning" | "critical"
     message: str
     current_value: float
     threshold_value: float
@@ -91,7 +91,11 @@ class QualityMonitor:
         if stats["pass_rate"] < self.config.pass_rate_threshold:
             a = self._maybe_alert(
                 "pass_rate_drop",
-                "critical" if stats["pass_rate"] < self.config.pass_rate_threshold / 2 else "warning",
+                (
+                    "critical"
+                    if stats["pass_rate"] < self.config.pass_rate_threshold / 2
+                    else "warning"
+                ),
                 f"Pass rate {stats['pass_rate']:.1%} < {self.config.pass_rate_threshold:.1%}",
                 stats["pass_rate"],
                 self.config.pass_rate_threshold,
@@ -104,7 +108,11 @@ class QualityMonitor:
         if stats["avg_score"] < self.config.avg_score_threshold:
             a = self._maybe_alert(
                 "score_drop",
-                "critical" if stats["avg_score"] < self.config.avg_score_threshold / 2 else "warning",
+                (
+                    "critical"
+                    if stats["avg_score"] < self.config.avg_score_threshold / 2
+                    else "warning"
+                ),
                 f"Avg score {stats['avg_score']:.3f} < {self.config.avg_score_threshold:.3f}",
                 stats["avg_score"],
                 self.config.avg_score_threshold,

@@ -176,9 +176,7 @@ class EvaluationRun:
         self.error_cases = sum(1 for r in self.test_results if r.status == TestStatus.ERROR)
         self.avg_score = sum(r.overall_score for r in self.test_results) / self.total_cases
         self.total_cost_usd = sum(r.agent_output.cost_usd for r in self.test_results)
-        self.total_tokens = sum(
-            sum(r.agent_output.token_usage.values()) for r in self.test_results
-        )
+        self.total_tokens = sum(sum(r.agent_output.token_usage.values()) for r in self.test_results)
         self.regression_count = sum(1 for r in self.test_results if r.is_regression)
 
     @property

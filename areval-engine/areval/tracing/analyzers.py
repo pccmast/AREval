@@ -92,17 +92,13 @@ class TraceAnalyzer:
 
         return analysis
 
-    def analyze_all(
-        self, traces: Dict[str, List[TraceSpan]]
-    ) -> List[TraceAnalysis]:
+    def analyze_all(self, traces: Dict[str, List[TraceSpan]]) -> List[TraceAnalysis]:
         """Analyse all traces, returning results sorted by *value_score* descending."""
         results = [self.analyze_trace(tid, spans) for tid, spans in traces.items()]
         results.sort(key=lambda a: a.value_score, reverse=True)
         return results
 
-    def analyze_conversation(
-        self, conversation_id: str, spans: List[TraceSpan]
-    ) -> TraceAnalysis:
+    def analyze_conversation(self, conversation_id: str, spans: List[TraceSpan]) -> TraceAnalysis:
         """Analyse a multi-turn conversation as a single evaluation unit.
 
         Merges all turns into a single *input_text* and evaluates the
@@ -113,8 +109,7 @@ class TraceAnalyzer:
         # Merge inputs from all turns
         sorted_spans = sorted(spans, key=lambda s: s.turn_index)
         analysis.input_text = "\n".join(
-            f"Turn {s.turn_index}: {s.attributes.get('input.args', '')}"
-            for s in sorted_spans
+            f"Turn {s.turn_index}: {s.attributes.get('input.args', '')}" for s in sorted_spans
         )[:2000]
         # Use the last turn's output as reference
         analysis.output_text = (
@@ -167,7 +162,8 @@ class TraceAnalyzer:
         return None
 
     def _extract_input_output(
-        self, spans: List[TraceSpan],
+        self,
+        spans: List[TraceSpan],
     ) -> tuple[Optional[str], Optional[str]]:
         """Extract input/output text from the root span."""
         root = spans[0] if spans else None
@@ -202,14 +198,19 @@ class TraceAnalyzer:
         tools: List[Dict[str, Any]] = []
         for span in spans:
             if "tool" in span.name.lower() or "tool.name" in span.attributes:
-                tools.append({
-                    "span_name": span.name,
-                    "span_id": span.span_id,
-                    "status": span.status,
-                    "duration_ms": span.duration_ms,
-                    "attributes": {k: v for k, v in span.attributes.items()
-                                   if k not in ("input.args", "input.kwargs", "output")},
-                })
+                tools.append(
+                    {
+                        "span_name": span.name,
+                        "span_id": span.span_id,
+                        "status": span.status,
+                        "duration_ms": span.duration_ms,
+                        "attributes": {
+                            k: v
+                            for k, v in span.attributes.items()
+                            if k not in ("input.args", "input.kwargs", "output")
+                        },
+                    }
+                )
         return tools
 
     @staticmethod

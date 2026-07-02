@@ -102,8 +102,7 @@ class Evaluator:
         # Filter: only evaluate approved cases (backward-compatible:
         # seed cases without 'pending_review' tag are treated as approved)
         approved_cases = [
-            tc for tc in test_cases
-            if "approved" in tc.tags or "pending_review" not in tc.tags
+            tc for tc in test_cases if "approved" in tc.tags or "pending_review" not in tc.tags
         ]
         skipped_review = len(test_cases) - len(approved_cases)
         if skipped_review:
@@ -137,15 +136,12 @@ class Evaluator:
         if compare_baseline:
             baseline = self.baseline_manager.get_latest_baseline()
             if baseline:
-                report = self.regression_detector.detect(
-                    run.test_results, baseline.test_results
-                )
+                report = self.regression_detector.detect(run.test_results, baseline.test_results)
                 if report.has_regression:
                     run.regression_count = len(report.affected_tests)
                     # Build O(1) lookup map from baseline results
                     baseline_score_map = {
-                        r.test_case.id: r.overall_score
-                        for r in baseline.test_results
+                        r.test_case.id: r.overall_score for r in baseline.test_results
                     }
                     affected_ids = set(report.affected_tests)
                     for result in run.test_results:
@@ -190,6 +186,7 @@ class Evaluator:
     ) -> TestResult:
         """Evaluate a single test case."""
         import math
+
         start_time = time.time()
         scores: Dict[str, float] = {}
 
@@ -217,8 +214,10 @@ class Evaluator:
         # Apply judges with retry + timeout (collect reasoning on success)
         judge_reasoning_parts = []
         for judge in self.judges:
+
             def _eval_judge(j=judge):
                 return j.evaluate(test_case, agent_output)
+
             result = self._run_judge_with_retry(_eval_judge, judge.name)
             scores[judge.name] = result[0]
             if result[1]:
@@ -229,13 +228,15 @@ class Evaluator:
         overall_score = sum(valid_scores) / len(valid_scores) if valid_scores else 0.0
 
         # min_score gate: any valid metric below min_score → fail
-        below_min = [name for name, s in scores.items()
-                     if not math.isnan(s) and s < self.min_score]
+        below_min = [name for name, s in scores.items() if not math.isnan(s) and s < self.min_score]
         if below_min and self.min_score > 0:
             overall_score = min(overall_score, self.min_score)
             logger.warning(
                 "Test case '%s' has %d metric(s) below min_score %.2f: %s",
-                test_case.name, len(below_min), self.min_score, below_min,
+                test_case.name,
+                len(below_min),
+                self.min_score,
+                below_min,
             )
 
         execution_time = (time.time() - start_time) * 1000
@@ -256,7 +257,6 @@ class Evaluator:
 
         Returns the score on success, ``NaN`` after exhausting retries.
         """
-        import math
         for attempt in range(1, self.metric_retries + 1):
             try:
                 result = fn()
@@ -265,12 +265,17 @@ class Evaluator:
                 if attempt < self.metric_retries:
                     logger.info(
                         "Metric/judge '%s' attempt %d/%d failed: %s — retrying",
-                        name, attempt, self.metric_retries, e,
+                        name,
+                        attempt,
+                        self.metric_retries,
+                        e,
                     )
                 else:
                     logger.warning(
                         "Metric/judge '%s' failed after %d attempt(s): %s",
-                        name, self.metric_retries, e,
+                        name,
+                        self.metric_retries,
+                        e,
                     )
         return float("nan")
 
@@ -279,7 +284,6 @@ class Evaluator:
 
         Returns ``(NaN, None)`` after exhausting retries.
         """
-        import math
         for attempt in range(1, self.metric_retries + 1):
             try:
                 result = fn()
@@ -288,12 +292,17 @@ class Evaluator:
                 if attempt < self.metric_retries:
                     logger.info(
                         "Judge '%s' attempt %d/%d failed: %s — retrying",
-                        name, attempt, self.metric_retries, e,
+                        name,
+                        attempt,
+                        self.metric_retries,
+                        e,
                     )
                 else:
                     logger.warning(
                         "Judge '%s' failed after %d attempt(s): %s",
-                        name, self.metric_retries, e,
+                        name,
+                        self.metric_retries,
+                        e,
                     )
         return float("nan"), None
 
@@ -318,10 +327,10 @@ class Evaluator:
     def summary(self, run: EvaluationRun) -> str:
         """Generate a text summary of an evaluation run."""
         lines = [
-            f"=" * 60,
+            "=" * 60,
             f"Evaluation Run: {run.name}",
             f"Description: {run.description}",
-            f"-" * 60,
+            "-" * 60,
             f"Total Cases:  {run.total_cases}",
             f"Passed:       {run.passed_cases} ({run.pass_rate:.1%})",
             f"Failed:       {run.failed_cases}",
@@ -333,6 +342,6 @@ class Evaluator:
             f"Total Cost:   ${run.total_cost_usd:.4f}",
             f"Total Tokens: {run.total_tokens:,}",
             f"Duration:     {run.duration_seconds:.1f}s",
-            f"=" * 60,
+            "=" * 60,
         ]
         return "\n".join(lines)

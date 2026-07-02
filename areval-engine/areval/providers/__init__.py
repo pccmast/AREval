@@ -12,6 +12,7 @@ from areval.providers.local_llm import LocalLLMProvider
 from areval.providers.remote_llm import RemoteLLMProvider
 
 __all__ = [
+    "_LocalModelProviderABC",
     "LocalLLMProvider",
     "RemoteLLMProvider",
 ]

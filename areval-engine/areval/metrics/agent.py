@@ -13,13 +13,12 @@ Three-tier support:
 from __future__ import annotations
 
 import re
-from typing import Any, List, Optional, Set
+from typing import Any, Optional
 
 from areval.config import log_degradation
 from areval.metrics.base import Metric, MetricResult
 from areval.routing import router
 from areval.test_case import TestCase, AgentOutput
-
 
 # ============================================================================
 # Tier-2 semantic prompt (ToolCallAccuracy)
@@ -85,6 +84,7 @@ REASONING: <brief reasoning>
 # Helpers
 # ============================================================================
 
+
 def _parse_semantic_batch(raw: str, expected_count: int) -> list[bool]:
     """Parse batch semantic-equivalence response into a list of bool."""
     results: list[bool] = []
@@ -141,11 +141,10 @@ class ToolCallAccuracyMetric(Metric):
 
     def _tier2_available(self) -> bool:
         from areval.providers.local_llm import LocalLLMProvider as P
+
         return P(base_url=self._local_url, model=self._local_model).is_available()
 
-    def _run_semantic_check(
-        self, expected: list[str], actual: list[str]
-    ) -> list[bool]:
+    def _run_semantic_check(self, expected: list[str], actual: list[str]) -> list[bool]:
         """Run batch semantic equivalence check via qwen3-1.7b."""
         pairs: list[tuple[str, str]] = []
         for i in range(max(len(expected), len(actual))):
@@ -157,6 +156,7 @@ class ToolCallAccuracyMetric(Metric):
         prompt = _SEMANTIC_BATCH_PROMPT.format(items=items)
 
         from areval.providers.local_llm import LocalLLMProvider as P
+
         llm = P(base_url=self._local_url, model=self._local_model)
         raw = llm.chat_complete(prompt)
         return _parse_semantic_batch(raw, len(pairs))
@@ -169,19 +169,22 @@ class ToolCallAccuracyMetric(Metric):
 
         if not expected_tools and not actual_tools:
             return MetricResult(
-                name=self.name, score=1.0,
+                name=self.name,
+                score=1.0,
                 reasoning="No tools expected or called",
                 threshold=self.threshold,
             )
         if not expected_tools:
             return MetricResult(
-                name=self.name, score=0.0,
+                name=self.name,
+                score=0.0,
                 reasoning=f"No tools expected but {len(actual_tools)} were called",
                 threshold=self.threshold,
             )
         if not actual_tools:
             return MetricResult(
-                name=self.name, score=0.0,
+                name=self.name,
+                score=0.0,
                 reasoning=f"Expected {len(expected_tools)} tools but none were called",
                 threshold=self.threshold,
             )
@@ -208,29 +211,20 @@ class ToolCallAccuracyMetric(Metric):
             matches = sum(1 for m in semantic_matches if m)
             name_score = matches / n
             score += name_score * 0.5
-            reasoning_parts.append(
-                f"Semantic accuracy (tier-2): {matches}/{n}"
-            )
+            reasoning_parts.append(f"Semantic accuracy (tier-2): {matches}/{n}")
         elif self.check_order:
-            matches = sum(
-                1 for e, a in zip(expected_tools, actual_tools) if e == a
-            )
+            matches = sum(1 for e, a in zip(expected_tools, actual_tools) if e == a)
             order_score = matches / n
             score += order_score * 0.5
-            reasoning_parts.append(
-                f"Order accuracy: {matches}/{n}"
-            )
+            reasoning_parts.append(f"Order accuracy: {matches}/{n}")
         else:
             expected_set = set(expected_tools)
             actual_set = set(actual_tools)
             precision = len(expected_set & actual_set) / len(actual_set) if actual_set else 0
             recall = len(expected_set & actual_set) / len(expected_set) if expected_set else 0
-            f1 = (2 * precision * recall / (precision + recall)
-                  if (precision + recall) > 0 else 0)
+            f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
             score += f1 * 0.5
-            reasoning_parts.append(
-                f"Tool F1: {f1:.2f} (P={precision:.2f}, R={recall:.2f})"
-            )
+            reasoning_parts.append(f"Tool F1: {f1:.2f} (P={precision:.2f}, R={recall:.2f})")
 
         # Parameter check
         if self.check_params and agent_output.tool_calls:
@@ -317,10 +311,11 @@ class TaskCompletionMetric(Metric):
             failure_count = sum(1 for ind in failure_indicators if ind in output_lower)
             score = 1.0 if success_count > failure_count else 0.0
             return MetricResult(
-                name=self.name, score=score,
+                name=self.name,
+                score=score,
                 passed=score >= self.threshold,
                 reasoning=f"Success indicators: {success_count}, "
-                          f"Failure indicators: {failure_count}",
+                f"Failure indicators: {failure_count}",
                 threshold=self.threshold,
                 metadata={"tier": "tier1", "mode": self.mode},
             )
@@ -328,14 +323,16 @@ class TaskCompletionMetric(Metric):
         output = agent_output.output.strip()
         if not output:
             return MetricResult(
-                name=self.name, score=0.0,
+                name=self.name,
+                score=0.0,
                 reasoning="Empty output",
                 threshold=self.threshold,
                 metadata={"tier": "tier1", "mode": self.mode},
             )
         score = min(1.0, len(output) / 200)
         return MetricResult(
-            name=self.name, score=score,
+            name=self.name,
+            score=score,
             passed=score >= self.threshold,
             reasoning=f"Output length: {len(output)} chars",
             threshold=self.threshold,
@@ -383,10 +380,7 @@ class TaskCompletionMetric(Metric):
             return self._evaluate_deterministic(test_case, agent_output)
 
         # open_ended / trajectory → route by task name
-        task_name = (
-            "trajectory_evaluation" if self.mode == "trajectory"
-            else "task_completion_open"
-        )
+        task_name = "trajectory_evaluation" if self.mode == "trajectory" else "task_completion_open"
         rubric = _TRAJECTORY_RUBRIC if self.mode == "trajectory" else _OPEN_ENDED_RUBRIC
         extra: dict[str, Any] | None = None
 
@@ -399,6 +393,8 @@ class TaskCompletionMetric(Metric):
         if tier == "tier3":
             return self._evaluate_with_llm(test_case, agent_output, rubric, extra)
         if tier == "tier2":
-            log_degradation("3", "1", "Tier 2 not specialized for TaskCompletion, using deterministic")
+            log_degradation(
+                "3", "1", "Tier 2 not specialized for TaskCompletion, using deterministic"
+            )
             return self._evaluate_deterministic(test_case, agent_output)
         return self._evaluate_deterministic(test_case, agent_output)

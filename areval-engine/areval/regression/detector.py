@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
 import numpy as np
 
@@ -87,10 +87,12 @@ class RegressionDetector:
         common_ids = set(baseline_map.keys()) & set(current_map.keys())
 
         if len(common_ids) < 2:
-            report.details.append({
-                "warning": "Insufficient common test cases for statistical comparison",
-                "common_count": len(common_ids),
-            })
+            report.details.append(
+                {
+                    "warning": "Insufficient common test cases for statistical comparison",
+                    "common_count": len(common_ids),
+                }
+            )
             return report
 
         # Collect paired scores
@@ -108,13 +110,15 @@ class RegressionDetector:
             deltas.append(delta)
 
             if delta < -self.absolute_threshold:
-                affected.append({
-                    "test_id": tc_id,
-                    "test_name": c.test_case.name,
-                    "baseline": b.overall_score,
-                    "current": c.overall_score,
-                    "delta": delta,
-                })
+                affected.append(
+                    {
+                        "test_id": tc_id,
+                        "test_name": c.test_case.name,
+                        "baseline": b.overall_score,
+                        "current": c.overall_score,
+                        "delta": delta,
+                    }
+                )
 
         # Statistical tests
         if len(deltas) >= 2:

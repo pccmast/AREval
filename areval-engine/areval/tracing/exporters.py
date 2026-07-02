@@ -80,9 +80,7 @@ class OTLPExporter:
         self.endpoint = endpoint or os.environ.get(
             "OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318"
         )
-        self.service_name = service_name or os.environ.get(
-            "OTEL_SERVICE_NAME", "areval"
-        )
+        self.service_name = service_name or os.environ.get("OTEL_SERVICE_NAME", "areval")
 
     def export(self, traces: Dict[str, List[Dict[str, Any]]]) -> None:
         """Convert internal spans to OTLP JSON and POST to collector."""

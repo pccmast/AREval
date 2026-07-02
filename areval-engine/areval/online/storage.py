@@ -22,7 +22,7 @@ class OnlineResult:
 
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     trace_id: Optional[str] = None
-    input_hash: str = ""        # hash of the user input (for dedup / correlation)
+    input_hash: str = ""  # hash of the user input (for dedup / correlation)
     scores: Dict[str, float] = field(default_factory=dict)
     overall_score: float = 0.0
     passed: bool = False
@@ -156,9 +156,7 @@ class TimeSeriesStorage:
         for r in results:
             ts = r.timestamp.replace(second=0, microsecond=0)
             # Find the bucket start
-            bucket_start = ts - timedelta(
-                minutes=ts.minute % bucket_minutes
-            )
+            bucket_start = ts - timedelta(minutes=ts.minute % bucket_minutes)
             key = bucket_start.isoformat()
             if key in buckets:
                 buckets[key].append(r.overall_score)
@@ -167,9 +165,9 @@ class TimeSeriesStorage:
             {
                 "timestamp": ts,
                 "avg_score": sum(scores) / len(scores) if scores else 0.0,
-                "pass_rate": sum(1 for s in scores if s >= threshold) / len(scores)
-                if scores
-                else 0.0,
+                "pass_rate": (
+                    sum(1 for s in scores if s >= threshold) / len(scores) if scores else 0.0
+                ),
                 "count": len(scores),
             }
             for ts, scores in buckets.items()

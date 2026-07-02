@@ -30,6 +30,9 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
+from typing import Optional
+
+from areval.providers.base import LocalModelProvider
 
 # Auto-load .env from project root (no third-party deps)
 for _env_dir in [Path.cwd(), Path(__file__).resolve().parent.parent.parent]:
@@ -43,9 +46,6 @@ for _env_dir in [Path.cwd(), Path(__file__).resolve().parent.parent.parent]:
                 if _k not in os.environ:
                     os.environ[_k] = _v
         break
-from typing import Any, Optional
-
-from areval.providers.base import LocalModelProvider
 
 logger = logging.getLogger(__name__)
 
@@ -80,8 +80,12 @@ def _probe_http(url: str, timeout: float = 0.5, api_key: Optional[str] = None) -
             headers["Authorization"] = f"Bearer {api_key}"
         r = httpx.get(url, timeout=timeout, follow_redirects=False, headers=headers)
         return r.status_code < 500  # 4xx counts as "reachable"
-    except (httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError,
-            httpx.RemoteProtocolError):
+    except (
+        httpx.ConnectError,
+        httpx.TimeoutException,
+        httpx.NetworkError,
+        httpx.RemoteProtocolError,
+    ):
         return False
     except Exception:
         return False
@@ -122,11 +126,7 @@ class LocalLLMProvider(LocalModelProvider):
         self._timeout = timeout
         self._max_retries = max_retries
         # LM Studio >= 0.3.x requires an API token; Ollama/vLLM accept any non-empty string
-        self._api_key = (
-            api_key
-            or os.environ.get("LM_API_TOKEN")
-            or "not-needed"
-        )
+        self._api_key = api_key or os.environ.get("LM_API_TOKEN") or "not-needed"
 
     # ------------------------------------------------------------------
     #  Properties
@@ -209,7 +209,4 @@ class LocalLLMProvider(LocalModelProvider):
         return ""
 
     def __repr__(self) -> str:
-        return (
-            f"LocalLLMProvider(base_url={self._base_url!r}, "
-            f"model={self._model!r})"
-        )
+        return f"LocalLLMProvider(base_url={self._base_url!r}, " f"model={self._model!r})"
