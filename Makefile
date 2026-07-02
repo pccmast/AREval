@@ -6,6 +6,7 @@ help:
 	@echo "Available commands:"
 	@echo "  make install      Install all dependencies"
 	@echo "  make test         Run test suite"
+	@echo "  make check        Run full CI pipeline locally (test + lint + format)"
 	@echo "  make lint         Run linters (ruff, mypy)"
 	@echo "  make format       Format code (black)"
 	@echo "  make dashboard    Start development dashboard"
@@ -20,6 +21,9 @@ install:
 
 test:
 	pytest tests/ -v --cov=areval --cov-report=term-missing
+
+check: test lint
+	black --check areval-engine/areval areval-sdk/areval_sdk areval-cli/areval_cli
 
 lint:
 	ruff check areval-engine/areval areval-sdk/areval_sdk areval-cli/areval_cli
