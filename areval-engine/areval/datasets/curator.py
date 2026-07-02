@@ -33,7 +33,16 @@ class CurationConfig:
     min_value_score : float
         Minimum value score for a trace to be considered for curation.
     max_cases : int
-        Maximum number of test cases to curate.
+        Maximum number of test cases to curate (fixed ceiling; kept for
+        backward compatibility).
+    max_ratio : float
+        Fraction of candidates to retain (0 < ratio <= 1).  Used together
+        with *min_keep* and *absolute_max* to compute the effective limit.
+    min_keep : int
+        Floor on curated count — useful when total traces are few but
+        high-quality.
+    absolute_max : int
+        Hard upper bound (prevents memory blow-up on huge trace pools).
     dedup_similarity : float
         Jaccard similarity threshold above which two inputs are considered
         duplicates and one is discarded.
@@ -42,19 +51,32 @@ class CurationConfig:
         for production data.
     include_categories : List[str]
         Only traces in these categories are curated.
+    require_review : bool
+        When True (default), curated cases are tagged ``"pending_review"``
+        and excluded from evaluation until a human approves them.
     """
 
     min_value_score: float = 0.3
     max_cases: int = 100
+    max_ratio: float = 0.2
+    min_keep: int = 20
+    absolute_max: int = 500
     dedup_similarity: float = 0.8
     strip_pii: bool = True
     include_categories: List[str] = field(
         default_factory=lambda: ["low_score", "error", "edge_case"]
     )
+    require_review: bool = True
 
     def __post_init__(self) -> None:
         if not self.strip_pii:
             raise ValueError("PII stripping must remain enabled for trace curation.")
+        if not (0 < self.max_ratio <= 1.0):
+            raise ValueError("max_ratio must be in (0, 1]")
+        if self.min_keep < 1:
+            raise ValueError("min_keep must be >= 1")
+        if self.absolute_max < self.min_keep:
+            raise ValueError("absolute_max must be >= min_keep")
 
 
 # ---------------------------------------------------------------------------
@@ -82,6 +104,18 @@ class TraceCurator:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+
+    def _effective_max(self, candidate_count: int) -> int:
+        """Compute the dynamic curation limit.
+
+        Formula: ``max(min_keep, min(absolute_max, candidate_count * max_ratio))``
+        This replaces the old fixed *max_cases* ceiling when *candidate_count*
+        is substantially larger than *min_keep*.
+        """
+        return max(
+            self.config.min_keep,
+            min(self.config.absolute_max, int(candidate_count * self.config.max_ratio)),
+        )
 
     def curate_from_traces(
         self,
@@ -114,11 +148,12 @@ class TraceCurator:
         # 3. Sort
         candidates.sort(key=lambda a: a.value_score, reverse=True)
 
-        # 4. Dedup
+        # 4. Dedup — use the dynamic limit to bound comparisons
+        effective_max = self._effective_max(len(candidates))
         candidates = self._dedup(
             candidates,
             threshold=self.config.dedup_similarity,
-            max_keep=self.config.max_cases,
+            max_keep=effective_max,
         )
 
         # 5. PII strip (always enabled)
@@ -127,15 +162,19 @@ class TraceCurator:
             if a.output_text:
                 a.output_text = self._strip_pii(a.output_text)
 
-        # 6. Convert
-        test_cases = [self._analysis_to_test_case(a) for a in candidates[: self.config.max_cases]]
+        # 6. Convert (respect dynamic limit)
+        effective_max = self._effective_max(len(candidates))
+        test_cases = [self._analysis_to_test_case(a) for a in candidates[: effective_max]]
 
         # 7. Build Dataset
+        tags = ["auto-curated"]
+        if self.config.require_review:
+            tags.append("pending_review")
         return Dataset(
             name=f"curated-{uuid.uuid4().hex[:8]}",
             description=f"Auto-curated from {len(all_analyses)} traces",
             test_cases=test_cases,
-            tags=["auto-curated"],
+            tags=tags,
         )
 
     def curate_from_eval_tracer(
@@ -144,8 +183,55 @@ class TraceCurator:
         existing_dataset: Optional[Dataset] = None,
     ) -> Dataset:
         """Shortcut: curate directly from an :class:`EvalTracer` instance."""
+        # Multi-turn conversations take priority if any exist
+        conversations = tracer.get_all_conversations()
+        if conversations:
+            return self.curate_conversations(conversations)
         traces = tracer.get_all_traces()
         return self.curate_from_traces(traces, existing_dataset)
+
+    def curate_conversations(
+        self,
+        conversations: Dict[str, List[Any]],
+    ) -> Dataset:
+        """Curate a Dataset from multi-turn conversation traces.
+
+        Each conversation (grouped by *conversation_id*) becomes one
+        ``TestCase`` whose *input* is the concatenated turns and
+        *context* is the full dialogue history.
+        """
+        all_analyses: list = []
+        for conv_id, spans in conversations.items():
+            if not spans:
+                continue
+            analysis = self.analyzer.analyze_conversation(conv_id, spans)
+            all_analyses.append(analysis)
+
+        candidates = [
+            a for a in all_analyses
+            if a.category in self.config.include_categories
+            and a.value_score >= self.config.min_value_score
+            and a.input_text
+        ]
+        candidates.sort(key=lambda a: a.value_score, reverse=True)
+
+        effective_max = self._effective_max(len(candidates))
+        candidates = self._dedup(candidates, threshold=self.config.dedup_similarity, max_keep=effective_max)
+
+        for a in candidates:
+            a.input_text = self._strip_pii(a.input_text or "")
+            if a.output_text:
+                a.output_text = self._strip_pii(a.output_text)
+
+        effective_max = self._effective_max(len(candidates))
+        test_cases = [self._analysis_to_test_case(a) for a in candidates[:effective_max]]
+
+        return Dataset(
+            name=f"curated-conv-{uuid.uuid4().hex[:8]}",
+            description=f"Auto-curated from {len(all_analyses)} conversations",
+            test_cases=test_cases,
+            tags=["auto-curated", "multi-turn"],
+        )
 
     # ------------------------------------------------------------------
     # Dedup
@@ -262,11 +348,14 @@ class TraceCurator:
            curation cannot generate a ground-truth answer.  Use
            LLM-as-a-Judge for evaluating these cases.
         """
+        tags = ["auto-curated", analysis.category]
+        if self.config.require_review:
+            tags.append("pending_review")
         return TestCase(
             name=f"curated-{analysis.trace_id[:8]}",
             input=analysis.input_text or "",
             expected_output=analysis.output_text,  # kept for reference, not as ground truth
-            tags=["auto-curated", analysis.category],
+            tags=tags,
             metadata={
                 "source_trace_id": analysis.trace_id,
                 "value_score": analysis.value_score,

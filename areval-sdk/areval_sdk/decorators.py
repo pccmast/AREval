@@ -29,11 +29,16 @@ def eval_trace(
     capture_input: bool = True,
     capture_output: bool = True,
     attributes: Optional[dict[str, Any]] = None,
+    new_conversation: bool = False,
+    conversation_id: Optional[str] = None,
 ) -> Callable[..., Any]:
     """Decorator to trace agent function execution.
 
     Captures latency, input/output, and custom attributes.
     Integrates with the evaluation tracing system.
+
+    Multi-turn: set *new_conversation=True* to start a conversation session;
+    subsequent calls automatically advance the turn index.
 
     Example:
         @eval_trace(name="search_agent")
@@ -45,6 +50,11 @@ def eval_trace(
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             span_name = name or func.__name__
             span_attrs = attributes or {}
+
+            if new_conversation:
+                _tracer.start_conversation(conversation_id)
+            elif conversation_id:
+                _tracer.start_conversation(conversation_id)
 
             if capture_input:
                 span_attrs["input.args"] = str(args)[:500]
@@ -58,6 +68,9 @@ def eval_trace(
                     if capture_output:
                         span.set_attribute("output", str(result)[:500])
                     span.set_attribute("latency_ms", (time.time() - start) * 1000)
+                    # Auto-advance turn for next call in the conversation
+                    if _tracer._active_conversation:
+                        _tracer.next_turn()
                     return result
                 except Exception as e:
                     span.set_attribute("status", "error")

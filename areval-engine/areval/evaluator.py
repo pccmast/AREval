@@ -91,8 +91,24 @@ class Evaluator:
         run = EvaluationRun(
             name=run_name or f"eval-{len(self._results_history) + 1}",
             description=run_description,
-            config=config or {},
         )
+
+        # Filter: only evaluate approved cases (backward-compatible:
+        # seed cases without 'pending_review' tag are treated as approved)
+        approved_cases = [
+            tc for tc in test_cases
+            if "approved" in tc.tags or "pending_review" not in tc.tags
+        ]
+        skipped_review = len(test_cases) - len(approved_cases)
+        if skipped_review:
+            logger.info(
+                "Skipping %d test case(s) tagged 'pending_review'. "
+                "Approve them via Dashboard or areval dataset approve.",
+                skipped_review,
+            )
+        test_cases = approved_cases if approved_cases else test_cases
+
+        run.config = config or {}
 
         # Get agent outputs
         if agent_outputs is not None:

@@ -100,6 +100,38 @@ class TraceAnalyzer:
         results.sort(key=lambda a: a.value_score, reverse=True)
         return results
 
+    def analyze_conversation(
+        self, conversation_id: str, spans: List[TraceSpan]
+    ) -> TraceAnalysis:
+        """Analyse a multi-turn conversation as a single evaluation unit.
+
+        Merges all turns into a single *input_text* and evaluates the
+        conversation holistically (e.g. task completion across turns).
+        """
+        analysis = TraceAnalysis(trace_id=conversation_id, spans=spans)
+
+        # Merge inputs from all turns
+        sorted_spans = sorted(spans, key=lambda s: s.turn_index)
+        analysis.input_text = "\n".join(
+            f"Turn {s.turn_index}: {s.attributes.get('input.args', '')}"
+            for s in sorted_spans
+        )[:2000]
+        # Use the last turn's output as reference
+        analysis.output_text = (
+            sorted_spans[-1].attributes.get("output", "") if sorted_spans else ""
+        )[:1000]
+        analysis.tool_calls = self._extract_tool_calls(spans)
+        analysis.error_count = sum(1 for s in spans if s.status == "error")
+        analysis.latency_ms = sum(s.duration_ms for s in spans)
+
+        analysis.value_score = self._compute_value_score(analysis)
+        analysis.category = self._classify(analysis)
+
+        analysis.metadata["turn_count"] = len(spans)
+        analysis.metadata["conversation_id"] = conversation_id
+
+        return analysis
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------

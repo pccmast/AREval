@@ -92,21 +92,30 @@ class TestTraceCurator:
             "t1": [_make_span("agent", status="error", score=0.1, **{"input.args": "What is 2+2?"})],
             "t2": [_make_span("agent", status="error", score=0.0, **{"input.args": "Capital of France?"})],
         }
-        curator = TraceCurator(config=CurationConfig(min_value_score=0.1, max_cases=50))
+        curator = TraceCurator(config=CurationConfig(
+            min_value_score=0.1, max_ratio=1.0, require_review=False,
+        ))
         ds = curator.curate_from_traces(traces)
         assert ds.size >= 1
-        assert ds.tags == ["auto-curated"]
+        assert "auto-curated" in ds.tags
         for tc in ds.test_cases:
             assert tc.name.startswith("curated-")
 
-    def test_curator_max_cases(self) -> None:
+    def test_curator_dynamic_limit(self) -> None:
+        """max_ratio + min_keep enforce a dynamic ceiling."""
         traces = {
             f"t{i}": [_make_span("agent", status="error", score=0.05, **{"input.args": f"unique query {i}"})]
-            for i in range(10)
+            for i in range(100)
         }
-        curator = TraceCurator(config=CurationConfig(min_value_score=0.0, max_cases=5))
+        curator = TraceCurator(config=CurationConfig(
+            min_value_score=0.0,
+            max_ratio=0.1,       # 100 × 0.1 = 10
+            min_keep=5,
+            absolute_max=8,      # max(5, min(8, 10)) = 8
+            require_review=False,
+        ))
         ds = curator.curate_from_traces(traces)
-        assert ds.size <= 5
+        assert ds.size <= 8
 
     def test_dedup_similar_inputs(self) -> None:
         traces = {

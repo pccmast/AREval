@@ -209,6 +209,38 @@ async def get_dataset(dataset_id: str) -> Dict[str, Any]:
     return dataset.to_dict()
 
 
+@app.put("/api/v1/datasets/{dataset_id}/cases/{case_id}/approve")
+async def approve_case(dataset_id: str, case_id: str) -> Dict[str, Any]:
+    """Approve a curated test case for evaluation."""
+    dataset = dataset_manager.get_dataset(dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    if not dataset.approve_case(case_id):
+        raise HTTPException(status_code=404, detail="Case not found or already approved")
+    return {"status": "approved", "case_id": case_id, "review_stats": dataset.review_stats}
+
+
+@app.put("/api/v1/datasets/{dataset_id}/cases/{case_id}/reject")
+async def reject_case(dataset_id: str, case_id: str) -> Dict[str, Any]:
+    """Reject a curated test case."""
+    dataset = dataset_manager.get_dataset(dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    if not dataset.reject_case(case_id):
+        raise HTTPException(status_code=404, detail="Case not found")
+    return {"status": "rejected", "case_id": case_id, "review_stats": dataset.review_stats}
+
+
+@app.post("/api/v1/datasets/{dataset_id}/approve-all")
+async def approve_all_cases(dataset_id: str) -> Dict[str, Any]:
+    """Approve all pending review cases in a dataset."""
+    dataset = dataset_manager.get_dataset(dataset_id)
+    if not dataset:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    count = dataset.approve_all()
+    return {"status": "approved", "count": count, "review_stats": dataset.review_stats}
+
+
 @app.post("/api/v1/evaluations")
 async def create_evaluation(body: CreateEvaluationRequest) -> Dict[str, Any]:
     """Start a new evaluation run.

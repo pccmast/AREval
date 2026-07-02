@@ -25,6 +25,8 @@ class TraceSpan:
     span_id: str = field(default_factory=lambda: str(uuid.uuid4())[:16])
     trace_id: Optional[str] = None
     parent_id: Optional[str] = None
+    conversation_id: Optional[str] = None   # multi-turn conversation grouping
+    turn_index: int = 0                      # turn number within conversation
     start_time: float = field(default_factory=time.time)
     end_time: Optional[float] = None
     status: str = "ok"  # ok, error
@@ -57,6 +59,8 @@ class TraceSpan:
             "span_id": self.span_id,
             "trace_id": self.trace_id,
             "parent_id": self.parent_id,
+            "conversation_id": self.conversation_id,
+            "turn_index": self.turn_index,
             "start_time": self.start_time,
             "end_time": self.end_time,
             "duration_ms": self.duration_ms,
@@ -81,6 +85,10 @@ class EvalTracer:
         self._spans: List[TraceSpan] = []
         self._span_stack: List[TraceSpan] = []
         self._exporters: List[Any] = []
+        # Multi-turn conversation tracking
+        self._active_conversation: Optional[str] = None
+        self._conversation_turn: int = 0
+        self._conversations: Dict[str, List[str]] = {}  # conv_id → [trace_id, ...]
 
     def add_exporter(self, exporter: Any) -> None:
         """Add an exporter for trace data."""
@@ -105,10 +113,17 @@ class EvalTracer:
             name=name,
             trace_id=trace_id or (parent.trace_id if parent else str(uuid.uuid4())),
             parent_id=parent.span_id if parent else None,
+            conversation_id=self._active_conversation,
+            turn_index=self._conversation_turn if self._active_conversation else 0,
             attributes=attributes or {},
         )
 
         self._spans.append(span)
+
+        # Track conversation membership
+        if self._active_conversation:
+            self._conversations.setdefault(self._active_conversation, []).append(span.span_id)
+
         self._span_stack.append(span)
 
         try:
@@ -169,3 +184,51 @@ class EvalTracer:
             tid = span.trace_id or "unknown"
             traces.setdefault(tid, []).append(span)
         return traces
+
+    # ------------------------------------------------------------------
+    # Multi-turn conversation support
+    # ------------------------------------------------------------------
+
+    def start_conversation(self, conv_id: Optional[str] = None) -> str:
+        """Begin a multi-turn conversation.
+
+        Subsequent :meth:`start_span` calls will automatically inherit the
+        *conversation_id* and increment the *turn_index*.
+
+        Returns the *conv_id* so it can be stored on the caller side.
+        """
+        cid = conv_id or f"conv-{uuid.uuid4().hex[:8]}"
+        self._active_conversation = cid
+        self._conversation_turn = 0
+        self._conversations.setdefault(cid, [])
+        return cid
+
+    def next_turn(self) -> int:
+        """Advance to the next turn in the active conversation.
+
+        Returns the new *turn_index* (0-based).  Call this between
+        Agent invocations when the user provides a new utterance.
+        """
+        self._conversation_turn += 1
+        return self._conversation_turn
+
+    def end_conversation(self) -> None:
+        """End the active conversation."""
+        self._active_conversation = None
+        self._conversation_turn = 0
+
+    def get_conversation_spans(self, conv_id: str) -> List[TraceSpan]:
+        """Return all spans belonging to a conversation, ordered by turn."""
+        span_ids = self._conversations.get(conv_id, [])
+        id_set = set(span_ids)
+        return sorted(
+            [s for s in self._spans if s.span_id in id_set],
+            key=lambda s: s.start_time,
+        )
+
+    def get_all_conversations(self) -> Dict[str, List[TraceSpan]]:
+        """Return all multi-turn conversations grouped by conv_id."""
+        result: Dict[str, List[TraceSpan]] = {}
+        for cid in self._conversations:
+            result[cid] = self.get_conversation_spans(cid)
+        return result

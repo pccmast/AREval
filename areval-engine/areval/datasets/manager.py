@@ -61,6 +61,66 @@ class Dataset:
         )
         return train, test
 
+    # ------------------------------------------------------------------
+    # Review workflow (Feature 3 — human-in-the-loop curation)
+    # ------------------------------------------------------------------
+
+    def approved_cases(self) -> List[TestCase]:
+        """Return only approved cases for evaluation.
+
+        Cases without explicit approval/rejection tags (e.g. manually
+        authored seed datasets) are treated as approved.
+        """
+        return [
+            tc for tc in self.test_cases
+            if "approved" in tc.tags or "pending_review" not in tc.tags
+        ]
+
+    def pending_review_cases(self) -> List[TestCase]:
+        """Return cases awaiting human review."""
+        return [tc for tc in self.test_cases if "pending_review" in tc.tags]
+
+    @property
+    def review_stats(self) -> Dict[str, int]:
+        """Quick review status summary."""
+        return {
+            "total": len(self.test_cases),
+            "approved": len(self.approved_cases()),
+            "pending_review": len(self.pending_review_cases()),
+        }
+
+    def approve_case(self, case_id: str) -> bool:
+        """Promote a single case from pending_review → approved."""
+        for tc in self.test_cases:
+            if tc.id == case_id and "pending_review" in tc.tags:
+                tc.tags = [t for t in tc.tags if t != "pending_review"] + ["approved"]
+                # Also remove 'pending_review' from dataset-level tag if no cases left
+                if not self.pending_review_cases():
+                    self.tags = [t for t in self.tags if t != "pending_review"]
+                return True
+        return False
+
+    def reject_case(self, case_id: str) -> bool:
+        """Remove a pending_review case from the dataset."""
+        before = len(self.test_cases)
+        self.test_cases = [
+            tc for tc in self.test_cases
+            if not (tc.id == case_id and "pending_review" in tc.tags)
+        ]
+        if not self.pending_review_cases():
+            self.tags = [t for t in self.tags if t != "pending_review"]
+        return len(self.test_cases) < before
+
+    def approve_all(self) -> int:
+        """Approve all pending cases at once.  Returns count of approved cases."""
+        count = 0
+        for tc in self.test_cases:
+            if "pending_review" in tc.tags:
+                tc.tags = [t for t in tc.tags if t != "pending_review"] + ["approved"]
+                count += 1
+        self.tags = [t for t in self.tags if t != "pending_review"]
+        return count
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "id": self.id,

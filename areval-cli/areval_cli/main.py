@@ -506,8 +506,12 @@ def curate(
     output_name: str = typer.Option(
         "auto-curated", "--name", "-n", help="Dataset name"
     ),
-    max_cases: int = typer.Option(100, "--max", help="Maximum test cases to curate"),
+    max_cases: int = typer.Option(0, "--max", help="Fixed max (0 = use ratio-based limit)"),
+    max_ratio: float = typer.Option(0.2, "--ratio", help="Fraction of candidates to keep"),
+    min_keep: int = typer.Option(20, "--min-keep", help="Minimum test cases to curate"),
+    absolute_max: int = typer.Option(500, "--max-abs", help="Hard upper bound"),
     min_score: float = typer.Option(0.3, "--min-score", help="Minimum value score"),
+    no_review: bool = typer.Option(False, "--no-review", help="Skip human review flag"),
 ) -> None:
     """Curate a test dataset from production trace data.
 
@@ -557,7 +561,15 @@ def curate(
     console.print(f"Loaded {sum(len(v) for v in traces.values())} spans across {len(traces)} traces")
 
     # Configure & curate
-    config = CurationConfig(min_value_score=min_score, max_cases=max_cases)
+    config = CurationConfig(
+        min_value_score=min_score,
+        max_ratio=max_ratio,
+        min_keep=min_keep,
+        absolute_max=absolute_max,
+        require_review=not no_review,
+    )
+    if max_cases > 0:
+        config.max_cases = max_cases
     curator = TraceCurator(config=config)
     dataset = curator.curate_from_traces(traces)
 
@@ -565,6 +577,8 @@ def curate(
     dm.save_dataset(dataset)
 
     console.print(f"\n[green]Dataset '{output_name}' curated: {dataset.size} test cases[/green]")
+    if "pending_review" in dataset.tags:
+        console.print("[yellow]  Cases tagged 'pending_review' — approve via Dashboard before evaluation[/yellow]")
     for tc in dataset.test_cases[:10]:
         cat = tc.metadata.get("curation_category", "?")
         score = tc.metadata.get("value_score", 0)
