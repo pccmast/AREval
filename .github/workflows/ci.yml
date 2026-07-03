@@ -27,7 +27,11 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest tests/ -v --cov=areval --cov-report=xml
+          pytest tests/ -v --cov=areval --cov-report=xml -m "not integration and not docker and not e2e"
+
+      - name: Run integration tests
+        run: |
+          pytest tests/integration/ -v
 
       - name: Run type checks
         run: |

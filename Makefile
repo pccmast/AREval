@@ -1,28 +1,32 @@
-.PHONY: help install test lint format docs clean dashboard api docker-build docker-run
+.PHONY: help install test test-integration check lint format docs clean dashboard api docker-build docker-run
 
 help:
 	@echo "AREval - Agent Regression Evaluation Harness"
 	@echo ""
 	@echo "Available commands:"
-	@echo "  make install      Install all dependencies"
-	@echo "  make test         Run test suite"
-	@echo "  make check        Run full CI pipeline locally (test + lint + format)"
-	@echo "  make lint         Run linters (ruff, mypy)"
-	@echo "  make format       Format code (black)"
-	@echo "  make dashboard    Start development dashboard"
-	@echo "  make api          Start API server"
-	@echo "  make docker-build Build Docker images"
-	@echo "  make docker-run   Run with Docker Compose"
-	@echo "  make clean        Clean build artifacts"
+	@echo "  make install           Install all dependencies"
+	@echo "  make test              Run unit tests"
+	@echo "  make test-integration  Run integration tests (API only, no Docker)"
+	@echo "  make check             Run full CI pipeline locally (test + integration + lint + format)"
+	@echo "  make lint              Run linters (ruff, mypy)"
+	@echo "  make format            Format code (black)"
+	@echo "  make dashboard         Start development dashboard"
+	@echo "  make api               Start API server"
+	@echo "  make docker-build      Build Docker images"
+	@echo "  make docker-run        Run with Docker Compose"
+	@echo "  make clean             Clean build artifacts"
 
 install:
 	pip install -e ".[all,dev]"
 	cd areval-dashboard && npm install
 
 test:
-	pytest tests/ -v --cov=areval --cov-report=term-missing
+	pytest tests/ -v --cov=areval --cov-report=term-missing -m "not integration and not docker and not e2e"
 
-check: test lint
+test-integration:
+	pytest tests/integration/ -v
+
+check: test test-integration lint
 	black --check areval-engine/areval areval-sdk/areval_sdk areval-cli/areval_cli
 
 lint:
