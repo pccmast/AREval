@@ -1,17 +1,18 @@
-.PHONY: help install test test-integration check lint format docs clean dashboard api docker-build docker-run
+.PHONY: help install test test-integration check lint format docs clean dashboard api dev docker-build docker-run
 
 help:
 	@echo "AREval - Agent Regression Evaluation Harness"
 	@echo ""
 	@echo "Available commands:"
 	@echo "  make install           Install all dependencies"
+	@echo "  make dev               Start API + Dashboard with hot reload (one terminal)"
 	@echo "  make test              Run unit tests"
 	@echo "  make test-integration  Run integration tests (API only, no Docker)"
 	@echo "  make check             Run full CI pipeline locally (test + integration + lint + format)"
 	@echo "  make lint              Run linters (ruff, mypy)"
 	@echo "  make format            Format code (black)"
-	@echo "  make dashboard         Start development dashboard"
-	@echo "  make api               Start API server"
+	@echo "  make dashboard         Start development dashboard (port 3000)"
+	@echo "  make api               Start API server with hot reload (port 8700)"
 	@echo "  make docker-build      Build Docker images"
 	@echo "  make docker-run        Run with Docker Compose"
 	@echo "  make clean             Clean build artifacts"
@@ -19,6 +20,15 @@ help:
 install:
 	pip install -e ".[all,dev]"
 	cd areval-dashboard && npm install
+
+dev:
+	@echo "============================================"
+	@echo "  AREval Dev Environment"
+	@echo "  API       -> http://localhost:8700"
+	@echo "  Dashboard -> http://localhost:3000"
+	@echo "  Both have hot reload — edit & save to see changes"
+	@echo "============================================"
+	@$(MAKE) -j2 api dashboard
 
 test:
 	pytest tests/ -v --cov=areval --cov-report=term-missing -m "not integration and not docker and not e2e"
@@ -40,7 +50,7 @@ dashboard:
 	cd areval-dashboard && npm run dev
 
 api:
-	cd areval-api && uvicorn areval_api.main:app --reload --port 8000
+	cd areval-api && uvicorn areval_api.main:app --reload --port 8700
 
 docker-build:
 	docker-compose build
