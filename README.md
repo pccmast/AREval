@@ -1,5 +1,7 @@
 # AREval — Agent Regression Evaluation Harness
 
+[English](README.md) | [中文](README_CN.md)
+
 > **Evaluating AI agents at scale. Preventing regressions before they reach production.**
 
 AREval is an open-source evaluation and regression harness for AI agents. It provides a complete toolkit for benchmarking agent performance, detecting quality regressions, and maintaining production-grade reliability across agent iterations.

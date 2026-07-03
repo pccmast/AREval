@@ -1,5 +1,7 @@
 # AREval — Agent 回归评估平台
 
+[English](README.md) | [中文](README_CN.md)
+
 > **大规模评估 AI Agent，在上线前拦截质量退化。**
 
 AREval 是一个面向 AI Agent 的开源评估与回归测试平台。提供完整的 Agent 性能基准测试、质量回归检测和生产级可靠性保障。
