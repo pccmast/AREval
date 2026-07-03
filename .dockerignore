@@ -1,0 +1,65 @@
+# ===================================================================
+# Docker build context — only what the API server needs.
+# ===================================================================
+
+# Secrets
+.env
+.env.*
+*.key
+*.pem
+
+# Python cache (useless in a container, rebuilds anyway)
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+
+# Development / docs (API server doesn't need these)
+docs/
+tests/
+examples/
+tools/
+datasets/
+*.md
+!README.md
+
+# Repo / CI metadata
+.git/
+.gitignore
+.github/
+.areval/
+
+# IDE and environment
+.vscode/
+.idea/
+.venv/
+venv/
+env/
+.workbuddy
+
+# Dashboard (separate service)
+areval-dashboard/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+*.egg
+htmlcov/
+.coverage
+coverage.xml
+node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker / compose
+docker-compose.yml
+Dockerfile
+.dockerignore
+
+# Local data
+*.db
+tool_eval_results.json
